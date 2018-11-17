@@ -1,4 +1,5 @@
 from enum import Enum
+from ctypes import c_int32
 
 # noinspection PyArgumentList
 RecvStates = Enum('RecvStates', ('CLOSED', 'LISTEN', 'SYN_REVD',
@@ -8,12 +9,30 @@ RecvStates = Enum('RecvStates', ('CLOSED', 'LISTEN', 'SYN_REVD',
 SendStates = Enum('SendStates', ('CLOSED', 'SYN_SENT', 'ESTABLISHED',
                                  'FIN_WAIT_1', 'FIN_WAIT_2', 'TIME_WAIT'))
 
-#The sections in TCP header
+# The sections in TCP header
 # noinspection PyArgumentList
 Sec = Enum('headerStruct', ('sPort', 'dPort', 'seqNum', 'ackNum',
                                        'offset', 'NS', 'CWR', 'ECE', 'URG',
                                        'ACK', 'PSH', 'RST', 'SYN', 'FIN',
                                        'recvWin', 'checksum', 'urgPtr'))
+
+
+# Custom header needs to define sPort, dPort, seqNum and ackNum
+defaultHeaderDict = {
+    Sec.offset: 5,
+    Sec.NS: False,
+    Sec.CWR: False,
+    Sec.ECE: False,
+    Sec.URG: False,
+    Sec.ACK: False,
+    Sec.PSH: False,
+    Sec.RST: False,
+    Sec.SYN: False,
+    Sec.FIN: False,
+    Sec.recvWin: 0,
+    Sec.urgPtr: 0,
+    Sec.checksum: 0
+}
 
 
 def header_to_dict(headerData: bytearray):
@@ -44,20 +63,79 @@ def add_int_to_bytearray(array: bytearray, ele: int, length: int):
 
 
 def dict_to_header(headerDict: dict):
-    result = bytearray()
-    add_int_to_bytearray(result, headerDict[Sec.sPort], 2)
-    add_int_to_bytearray(result, headerDict[Sec.dPort], 2)
-    add_int_to_bytearray(result, headerDict[Sec.seqNum], 4)
-    add_int_to_bytearray(result, headerDict[Sec.ackNum], 4)
-    result.append((headerDict[Sec.offset] << 4) | headerDict[Sec.NS])
-    result.append(headerDict[Sec.CWR] << 7 | headerDict[Sec.ECE] << 6 |
+    result = bytearray(20)
+    result[0:2] = int.to_bytes(headerDict[Sec.sPort], length=2, byteorder='big')
+    result[2:4] = int.to_bytes(headerDict[Sec.dPort], length=2, byteorder='big')
+    result[4:8] = int.to_bytes(headerDict[Sec.seqNum], length=4, byteorder='big')
+    result[8:12] = int.to_bytes(headerDict[Sec.ackNum], length=4, byteorder='big')
+    result[12] = ((headerDict[Sec.offset] << 4) | headerDict[Sec.NS])
+    result[13] = (headerDict[Sec.CWR] << 7 | headerDict[Sec.ECE] << 6 |
                   headerDict[Sec.URG] << 5 | headerDict[Sec.ACK] << 4 |
                   headerDict[Sec.PSH] << 3 | headerDict[Sec.RST] << 2 |
                   headerDict[Sec.SYN] << 1 | headerDict[Sec.FIN])
-    add_int_to_bytearray(result, headerDict[Sec.recvWin], 2)
-    add_int_to_bytearray(result, headerDict[Sec.checksum], 2)
-    add_int_to_bytearray(result, headerDict[Sec.urgPtr], 2)
+    result[14:16] = int.to_bytes(headerDict[Sec.recvWin], length=2, byteorder='big')
+    result[16:18] = int.to_bytes(headerDict[Sec.checksum], length=2, byteorder='big')
+    result[18:20] = int.to_bytes(headerDict[Sec.urgPtr], length=2, byteorder='big')
     return result
+
+
+def set_header_checksum(header: bytearray, checksum: bytearray):
+    header[16:18] = checksum
+
+
+def ip_to_bytes(ip: str):
+    return bytes(map(int, ip.split('.')))
+
+
+# This function should be called before sending each rUDP segment,
+# its functionality is calculate and fill in the checksum in header
+# using 1's complement
+# source ip and dest ip is needed for pseudo header
+def fill_checksum(header: bytearray, data: bytearray, sIP: bytearray, dIP: bytearray):
+    checksum = 0
+    pseudoHeader = bytearray([*sIP, *dIP, 0x00, 0x11])
+    pseudoHeader += int.to_bytes(len(header)+len(data), length=2, byteorder='big', signed=False)
+    for i in range(0, 12, 2):
+        val = ~int.from_bytes(pseudoHeader[i:i+2], byteorder='big', signed=False) & 0x0000ffff
+        checksum = (val + checksum)
+        checksum = (((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff))
+    for i in range(0, int(len(header) / 2), 2):
+        val = ~int.from_bytes(header[i:i+2], byteorder='big', signed=False) & 0x0000ffff
+        checksum = (val + checksum)
+        checksum = (((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff))
+    for i in range(0, int(len(data) / 2), 2):
+        val = ~int.from_bytes(data[i:i+2], byteorder='big', signed=False) & 0x0000ffff
+        checksum = (val + checksum)
+        checksum = ((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff)
+    if len(data) % 2 != 0:
+        pad = bytearray([data[-1], 0x00])
+        val = ~int.from_bytes(pad, byteorder='big', signed=False) & 0x0000ffff
+        checksum = (val + checksum)
+        checksum = ((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff)
+    set_header_checksum(header, bytearray(int.to_bytes(checksum, byteorder='big', length=2, signed=False)))
+
+
+# Check the data using checksum from the header
+# source ip and dest ip is needed for pseudo header
+def check_header_checksum(data: bytearray, sIP: bytearray, dIP: bytearray):
+    checksum = 0
+    pseudoHeader = bytearray([*sIP, *dIP, 0x00, 0x11])
+    pseudoHeader += int.to_bytes(len(data), length=2, byteorder='big', signed=False)
+    for i in range(0, 12, 2):
+        val = ~int.from_bytes(pseudoHeader[i:i+2], byteorder='big', signed=False) & 0x0000ffff
+        checksum = (val + checksum)
+        checksum = (((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff))
+    for i in range(0, int(len(data) / 2), 2):
+        val = ~int.from_bytes(data[i:i+2], byteorder='big', signed=False) & 0x0000ffff
+        checksum = (val + checksum)
+        checksum = ((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff)
+    if len(data) % 2 != 0:
+        pad = bytearray([data[-1], 0x00])
+        val = ~int.from_bytes(pad, byteorder='big', signed=False) & 0x0000ffff
+        checksum = (val + checksum)
+        checksum = ((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff)
+    return (checksum & 0x0000ffff) == 0
+
 
 
 
