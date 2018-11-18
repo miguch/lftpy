@@ -137,6 +137,10 @@ def check_header_checksum(data: bytearray, sIP: bytearray, dIP: bytearray):
     return (checksum & 0x0000ffff) == 0
 
 
+def get_seq_num(header: bytearray):
+    return int.from_bytes(header[4:8], byteorder='big', signed=False)
 
 
+def get_ack_num(header: bytearray):
+    return int.from_bytes(header[8:12], byteorder='big', signed=False)
 
