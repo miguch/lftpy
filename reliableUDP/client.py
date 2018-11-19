@@ -1,6 +1,6 @@
-from reliableUDP.connection import *
-from reliableUDP.log import logger
-from reliableUDP.utilities import *
+from connection import *
+from lftplog import logger
+from utilities import *
 import random
 
 
