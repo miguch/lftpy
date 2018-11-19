@@ -1,6 +1,6 @@
-from connection import *
-from lftplog import logger
-from utilities import *
+from .connection import rUDPConnection, message
+from .lftplog import logger
+from .utilities import *
 import random
 
 
@@ -125,7 +125,7 @@ class rUDPClient:
             return False
         if headerDict[Sec.FIN] or not headerDict[Sec.ACK]:
             return False
-        if headerDict.[Sec.dPort] != self.port or headerDict[Sec.sPort] != self.destPort:
+        if headerDict[Sec.dPort] != self.port or headerDict[Sec.sPort] != self.destPort:
             return False
         return True
 
@@ -134,7 +134,7 @@ class rUDPClient:
             return False
         if not headerDict[Sec.FIN] or not headerDict[Sec.ACK]:
             return False
-        if headerDict.[Sec.dPort] != self.port or headerDict.[Sec.sPort] != self.destPort:
+        if headerDict[Sec.dPort] != self.port or headerDict[Sec.sPort] != self.destPort:
             return False
         return True
 

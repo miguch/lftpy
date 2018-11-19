@@ -1,3 +1,3 @@
 
-__all__ = ['client.py', 'server.py']
+__all__ = ['client', 'server', 'connection', 'lftplog', 'utilities']
 

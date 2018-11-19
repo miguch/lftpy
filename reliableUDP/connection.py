@@ -1,4 +1,4 @@
-from lftplog import logger
+from .lftplog import logger
 import socket
 import threading
 

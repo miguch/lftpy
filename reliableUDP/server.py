@@ -1,7 +1,7 @@
 import threading
-from connection import *
-from utilities import *
-from log import logger
+from .connection import rUDPConnection, message
+from .utilities import *
+from .lftplog import logger
 import random
 
 
@@ -69,7 +69,7 @@ class serverConn:
             return
         if headerDict[Sec.ACK]:
             self.messages.ack_to_num(headerDict[Sec.ackNum])
-            if self.state == RecvStates.SYN_RCVD:
+            if self.state == RecvStates.SYN_REVD:
                 self.update_state(RecvStates.ESTABLISHED)
         else:
             if len(data) - defaultHeaderLen != PACKET_SIZE:
@@ -88,7 +88,7 @@ class serverConn:
             self.response_FIN()
 
     def send_msg(self, data):
-        
+        pass
 
 
     # Send the ack message to client

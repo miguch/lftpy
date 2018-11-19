@@ -1,6 +1,7 @@
 from enum import Enum
-from connection import *
 import threading
+from .connection import rUDPConnection, message
+from .lftplog import logger
 
 # noinspection PyArgumentList
 RecvStates = Enum('RecvStates', ('CLOSED', 'LISTEN', 'SYN_REVD',
