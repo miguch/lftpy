@@ -1,5 +1,5 @@
 from enum import Enum
-from ctypes import c_int32
+from reliableUDP.connection import *
 
 # noinspection PyArgumentList
 RecvStates = Enum('RecvStates', ('CLOSED', 'LISTEN', 'SYN_REVD',
@@ -143,4 +143,18 @@ def get_seq_num(header: bytearray):
 
 def get_ack_num(header: bytearray):
     return int.from_bytes(header[8:12], byteorder='big', signed=False)
+
+
+class msgPool:
+    def __init__(self):
+        self.messages = {}
+
+    def add_msg(self, msg: message, expectACK):
+        self.messages[expectACK] = msg
+
+    def ack_msg(self, ackNum):
+        if ackNum in self.messages:
+            self.messages[ackNum].acked = True
+            self.messages.pop(ackNum)
+            logger.debug('ACKed message with ackNum: %d' % ackNum)
 
