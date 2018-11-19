@@ -1,5 +1,6 @@
 from enum import Enum
 from reliableUDP.connection import *
+import threading
 
 # noinspection PyArgumentList
 RecvStates = Enum('RecvStates', ('CLOSED', 'LISTEN', 'SYN_REVD',
@@ -33,6 +34,9 @@ defaultHeaderDict = {
     Sec.urgPtr: 0,
     Sec.checksum: 0
 }
+
+# The default header length is 20 bytes
+defaultHeaderLen = 20
 
 
 def header_to_dict(headerData: bytearray):
@@ -157,4 +161,51 @@ class msgPool:
             self.messages[ackNum].acked = True
             self.messages.pop(ackNum)
             logger.debug('ACKed message with ackNum: %d' % ackNum)
+
+    # ack all messages with ackNum smaller than or equal to the given ackNum
+    def ack_to_num(self, ackNum):
+        for key in self.messages:
+            if key <= ackNum:
+                self.ack_msg(key)
+
+
+MAX_BUFFER_SIZE = 524288
+# Each data packet should be of size 1k
+PACKET_SIZE = 1024
+
+# 512kb receive window, store with a array
+class circleBuffer:
+    def __init__(self):
+        self.buffer = bytearray(MAX_BUFFER_SIZE)
+        self.baseIndex = 0
+        self.baseSeq = 0
+        self.endIndex = 0
+        self.length = 0
+        # Lock buffer when accessing
+        self.lock = threading.Lock()
+
+    def add(self, data: bytearray):
+        if self.length + PACKET_SIZE > MAX_BUFFER_SIZE:
+            raise Exception('buffer overflow when adding data.')
+        
+        self.buffer[self.endIndex:self.endIndex+PACKET_SIZE] = data
+        self.endIndex += PACKET_SIZE
+        if self.endIndex == MAX_BUFFER_SIZE:
+            self.endIndex = 0
+        self.length += PACKET_SIZE
+
+    def peek(self):
+        if self.length == 0:
+            raise Exception('Reading an empty buffer.')
+        return self.buffer[self.baseIndex: self.baseIndex + PACKET_SIZE]
+
+
+    def pop(self):
+        result = self.peek()
+        self.baseIndex += PACKET_SIZE
+        if self.baseIndex == MAX_BUFFER_SIZE:
+            self.baseIndex = 0
+        self.length -= PACKET_SIZE
+        self.baseSeq += PACKET_SIZE
+        return result
 
