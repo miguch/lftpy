@@ -1,5 +1,5 @@
 from enum import Enum
-from reliableUDP.connection import *
+from connection import *
 import threading
 
 # noinspection PyArgumentList
@@ -47,14 +47,14 @@ def header_to_dict(headerData: bytearray):
     result[Sec.ackNum] = int.from_bytes(headerData[8:12], byteorder='big', signed=False)
     result[Sec.offset] = int.from_bytes([headerData[12] & 0xf0], byteorder='big', signed=False)
     result[Sec.NS] = bool(headerData[12] & 0x01)
-    result[Sec.CWR] = bool(headerData[13] * 0x80)
-    result[Sec.ECE] = bool(headerData[13] * 0x40)
-    result[Sec.URG] = bool(headerData[13] * 0x20)
-    result[Sec.ACK] = bool(headerData[13] * 0x10)
-    result[Sec.PSH] = bool(headerData[13] * 0x08)
-    result[Sec.RST] = bool(headerData[13] * 0x04)
-    result[Sec.SYN] = bool(headerData[13] * 0x02)
-    result[Sec.FIN] = bool(headerData[13] * 0x01)
+    result[Sec.CWR] = bool(headerData[13] & 0x80)
+    result[Sec.ECE] = bool(headerData[13] & 0x40)
+    result[Sec.URG] = bool(headerData[13] & 0x20)
+    result[Sec.ACK] = bool(headerData[13] & 0x10)
+    result[Sec.PSH] = bool(headerData[13] & 0x08)
+    result[Sec.RST] = bool(headerData[13] & 0x04)
+    result[Sec.SYN] = bool(headerData[13] & 0x02)
+    result[Sec.FIN] = bool(headerData[13] & 0x01)
     result[Sec.recvWin] = int.from_bytes(headerData[14:16], byteorder='big', signed=False)
     result[Sec.checksum] = int.from_bytes(headerData[16:18], byteorder='big', signed=False)
     result[Sec.urgPtr] = int.from_bytes(headerData[18:20], byteorder='big', signed=False)
@@ -94,15 +94,8 @@ def ip_to_bytes(ip: str):
 # This function should be called before sending each rUDP segment,
 # its functionality is calculate and fill in the checksum in header
 # using 1's complement
-# source ip and dest ip is needed for pseudo header
-def fill_checksum(header: bytearray, data: bytearray, sIP: bytearray, dIP: bytearray):
+def fill_checksum(header: bytearray, data: bytearray):
     checksum = 0
-    pseudoHeader = bytearray([*sIP, *dIP, 0x00, 0x11])
-    pseudoHeader += int.to_bytes(len(header)+len(data), length=2, byteorder='big', signed=False)
-    for i in range(0, 12, 2):
-        val = ~int.from_bytes(pseudoHeader[i:i+2], byteorder='big', signed=False) & 0x0000ffff
-        checksum = (val + checksum)
-        checksum = (((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff))
     for i in range(0, int(len(header) / 2), 2):
         val = ~int.from_bytes(header[i:i+2], byteorder='big', signed=False) & 0x0000ffff
         checksum = (val + checksum)
@@ -120,15 +113,8 @@ def fill_checksum(header: bytearray, data: bytearray, sIP: bytearray, dIP: bytea
 
 
 # Check the data using checksum from the header
-# source ip and dest ip is needed for pseudo header
-def check_header_checksum(data: bytearray, sIP: bytearray, dIP: bytearray):
+def check_header_checksum(data: bytearray):
     checksum = 0
-    pseudoHeader = bytearray([*sIP, *dIP, 0x00, 0x11])
-    pseudoHeader += int.to_bytes(len(data), length=2, byteorder='big', signed=False)
-    for i in range(0, 12, 2):
-        val = ~int.from_bytes(pseudoHeader[i:i+2], byteorder='big', signed=False) & 0x0000ffff
-        checksum = (val + checksum)
-        checksum = (((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff))
     for i in range(0, int(len(data) / 2), 2):
         val = ~int.from_bytes(data[i:i+2], byteorder='big', signed=False) & 0x0000ffff
         checksum = (val + checksum)
@@ -187,7 +173,7 @@ class circleBuffer:
     def add(self, data: bytearray):
         if self.length + PACKET_SIZE > MAX_BUFFER_SIZE:
             raise Exception('buffer overflow when adding data.')
-        
+
         self.buffer[self.endIndex:self.endIndex+PACKET_SIZE] = data
         self.endIndex += PACKET_SIZE
         if self.endIndex == MAX_BUFFER_SIZE:

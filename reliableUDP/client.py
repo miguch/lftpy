@@ -32,7 +32,7 @@ class rUDPClient:
             Sec.SYN: 1
         })
         headerData = dict_to_header(headerDict)
-        fill_checksum(headerData, bytearray(), ip_to_bytes(self.ip), ip_to_bytes(self.destIP))
+        fill_checksum(headerData, bytearray())
         logger.debug("First handshake sent, seq: " + str(self.seqNum))
         syn_msg = message(headerData, self.conn)
         syn_msg.send_with_timer((self.destIP, self.destPort))
@@ -51,7 +51,7 @@ class rUDPClient:
             Sec.SYN: 0
         })
         headerData = dict_to_header(headerDict)
-        fill_checksum(headerData, bytearray(), ip_to_bytes(self.ip), ip_to_bytes(self.destIP))
+        fill_checksum(headerData, bytearray())
         logger.debug("Third handshake sent, seq: " + str(self.seqNum))
         syn_msg = message(headerData, self.conn)
         syn_msg.send_with_timer((self.destIP, self.destPort))
@@ -65,7 +65,7 @@ class rUDPClient:
         data, addr = self.conn.socket.recvfrom(100)
         headerDict = header_to_dict(data)
         while not (addr == (self.destIP, self.destPort) and
-                   check_header_checksum(data, ip_to_bytes(self.ip), ip_to_bytes(self.destIP)) and
+                   check_header_checksum(data) and
                    self.check_establish_header(headerDict)):
             data, addr = self.conn.socket.recvfrom(100)
             headerDict = header_to_dict(data)
@@ -75,7 +75,7 @@ class rUDPClient:
 
 
     def check_establish_header(self, headerDict: dict):
-        if headerDict.dPort != self.port or headerDict.sPort != self.destPort:
+        if headerDict[Sec.dPort] != self.port or headerDict[Sec.sPort] != self.destPort:
             return False
         if not (headerDict[Sec.SYN] and headerDict[Sec.ACK]):
             return False
@@ -113,7 +113,7 @@ class rUDPClient:
             Sec.FIN: 1
         })
         headerData = dict_to_header(headerDict)
-        fill_checksum(headerData, bytearray(), ip_to_bytes(self.ip), ip_to_bytes(self.destIP))
+        fill_checksum(headerData, bytearray())
         logger.debug("First wave sent, seq: " + str(self.seqNum))
         syn_msg = message(headerData, self.conn)
         syn_msg.send_with_timer((self.destIP, self.destPort))
@@ -125,7 +125,7 @@ class rUDPClient:
             return False
         if headerDict[Sec.FIN] or not headerDict[Sec.ACK]:
             return False
-        if headerDict.dPort != self.port or headerDict.sPort != self.destPort:
+        if headerDict.[Sec.dPort] != self.port or headerDict[Sec.sPort] != self.destPort:
             return False
         return True
 
@@ -134,7 +134,7 @@ class rUDPClient:
             return False
         if not headerDict[Sec.FIN] or not headerDict[Sec.ACK]:
             return False
-        if headerDict.dPort != self.port or headerDict.sPort != self.destPort:
+        if headerDict.[Sec.dPort] != self.port or headerDict.[Sec.sPort] != self.destPort:
             return False
         return True
 
@@ -145,7 +145,7 @@ class rUDPClient:
         second = False
         third = False
         while not (addr == (self.destIP, self.destPort) and
-                   check_header_checksum(data, ip_to_bytes(self.ip), ip_to_bytes(self.destIP)) and
+                   check_header_checksum(data) and
                    second and third):
             if self.check_second_wave(headerDict):
                 second = True
@@ -173,7 +173,7 @@ class rUDPClient:
             Sec.FIN: 0
         })
         headerData = dict_to_header(headerDict)
-        fill_checksum(headerData, bytearray(), ip_to_bytes(self.ip), ip_to_bytes(self.destIP))
+        fill_checksum(headerData, bytearray())
         logger.debug("First wave sent, seq: " + str(self.seqNum))
         syn_msg = message(headerData, self.conn)
         syn_msg.send((self.destIP, self.destPort))

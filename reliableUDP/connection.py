@@ -1,4 +1,4 @@
-from reliableUDP.log import logger
+from log import logger
 import socket
 import threading
 

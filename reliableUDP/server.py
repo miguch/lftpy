@@ -1,11 +1,8 @@
 import threading
-
-from reliableUDP.connection import *
-from reliableUDP.utilities import *
-from reliableUDP.log import logger
+from connection import *
+from utilities import *
+from log import logger
 import random
-
-
 
 
 class serverConn:
@@ -37,11 +34,11 @@ class serverConn:
             Sec.ACK: 1
         })
         headerData = dict_to_header(headerDict)
-        fill_checksum(headerData, bytearray(), ip_to_bytes(self.conn.ip), ip_to_bytes(self.destIP))
+        fill_checksum(headerData, bytearray())
         logger.debug("Server Second handshake sent, seq: " + str(self.seqNum))
         syn_msg = message(headerData, self.conn)
         syn_msg.send_with_timer(self.addr)
-        self.update_state(RecvStates.SYN_RCVD)
+        self.update_state(RecvStates.SYN_REVD)
         self.seqNum += 1
         self.clientSeq += 1
         self.recvWindow.baseSeq = self.clientSeq
@@ -57,7 +54,7 @@ class serverConn:
             Sec.FIN: 1
         })
         headerData = dict_to_header(headerDict)
-        fill_checksum(headerData, bytearray(), ip_to_bytes(self.ip), ip_to_bytes(self.destIP))
+        fill_checksum(headerData, bytearray())
         logger.debug("Server FIN message sent, seq: " + str(self.seqNum))
         fin_msg = message(headerData, self.conn)
         fin_msg.send_with_timer(self.addr)
@@ -90,9 +87,12 @@ class serverConn:
             # Client closing connection
             self.response_FIN()
 
+    def send_msg(self, data):
+        
+
 
     # Send the ack message to client
-    def ack_message(self, data, headerDict):
+    def ack_message(self):
         headerDict = defaultHeaderDict.copy().update({
             Sec.sPort: self.conn.port,
             Sec.dPort: self.destPort,
@@ -103,7 +103,7 @@ class serverConn:
             Sec.FIN: 1
         })
         headerData = dict_to_header(headerDict)
-        fill_checksum(headerData, bytearray(), ip_to_bytes(self.ip), ip_to_bytes(self.destIP))
+        fill_checksum(headerData, bytearray())
         logger.debug("sent ack message, ackNum: " + str(self.clientSeq))
         ack_msg = message(headerData, self.conn)
         ack_msg.send(self.addr)
@@ -125,7 +125,7 @@ class rUDPServer:
         headerDict = header_to_dict(data)
         if headerDict[Sec.SYN] and not headerDict[Sec.ACK]:
             # First handshake
-            self.conn[addr] = serverConn(addr, self.conn)
-            self.conn[addr].clientSeq = headerDict[Sec.seqNum]
+            self.connections[addr] = serverConn(addr, self.conn)
+            self.connections[addr].clientSeq = headerDict[Sec.seqNum]
         else:
-            self.conn[addr].process_data(data, headerDict)
+            self.connections[addr].process_data(data, headerDict)
