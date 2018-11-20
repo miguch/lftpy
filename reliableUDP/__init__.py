@@ -1,3 +1,3 @@
 
-__all__ = ['client', 'server', 'connection', 'lftplog', 'utilities']
+__all__ = ['client', 'server', 'lftplog']
 

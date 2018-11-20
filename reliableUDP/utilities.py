@@ -1,6 +1,6 @@
 from enum import Enum
 import threading
-from .connection import rUDPConnection, message
+from .connection import message
 from .lftplog import logger
 
 # noinspection PyArgumentList
@@ -125,7 +125,10 @@ def check_header_checksum(data: bytearray):
         val = ~int.from_bytes(pad, byteorder='big', signed=False) & 0x0000ffff
         checksum = (val + checksum)
         checksum = ((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff)
-    return (checksum & 0x0000ffff) == 0
+    result = ((checksum & 0x0000ffff) == 0)
+    if not result:
+        logger.debug("header checksum error.")
+    return False
 
 
 def get_seq_num(header: bytearray):
@@ -172,14 +175,18 @@ class circleBuffer:
         self.lock = threading.Lock()
 
     def add(self, data: bytearray):
-        if self.length + PACKET_SIZE > MAX_BUFFER_SIZE:
-            raise Exception('buffer overflow when adding data.')
+        self.lock.acquire()
+        try:
+            if self.length + PACKET_SIZE > MAX_BUFFER_SIZE:
+                raise Exception('buffer overflow when adding data.')
 
-        self.buffer[self.endIndex:self.endIndex+PACKET_SIZE] = data
-        self.endIndex += PACKET_SIZE
-        if self.endIndex == MAX_BUFFER_SIZE:
-            self.endIndex = 0
-        self.length += PACKET_SIZE
+            self.buffer[self.endIndex:self.endIndex+PACKET_SIZE] = data
+            self.endIndex += PACKET_SIZE
+            if self.endIndex == MAX_BUFFER_SIZE:
+                self.endIndex = 0
+            self.length += PACKET_SIZE
+        finally:
+            self.lock.release()    
 
     def peek(self):
         if self.length == 0:
@@ -188,11 +195,17 @@ class circleBuffer:
 
 
     def pop(self):
-        result = self.peek()
-        self.baseIndex += PACKET_SIZE
-        if self.baseIndex == MAX_BUFFER_SIZE:
-            self.baseIndex = 0
-        self.length -= PACKET_SIZE
-        self.baseSeq += PACKET_SIZE
-        return result
+        self.lock.acquire()
+        try:
+            result = self.peek()
+            self.baseIndex += PACKET_SIZE
+            if self.baseIndex == MAX_BUFFER_SIZE:
+                self.baseIndex = 0
+            self.length -= PACKET_SIZE
+            self.baseSeq += PACKET_SIZE
+            return result
+        finally:
+            self.lock.release()
+
+
 

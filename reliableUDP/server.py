@@ -1,8 +1,9 @@
 import threading
+import random
 from .connection import rUDPConnection, message
 from .utilities import *
 from .lftplog import logger
-import random
+
 
 
 class serverConn:
@@ -25,7 +26,8 @@ class serverConn:
     def handshake(self):
         # random seq
         self.seqNum = random.randint(0, 2 ** 16)
-        headerDict = defaultHeaderDict.copy().update({
+        headerDict = defaultHeaderDict.copy()
+        headerDict.update({
             Sec.sPort: self.conn.port,
             Sec.dPort: self.destPort,
             Sec.seqNum: self.seqNum,
@@ -42,9 +44,11 @@ class serverConn:
         self.seqNum += 1
         self.clientSeq += 1
         self.recvWindow.baseSeq = self.clientSeq
+        self.messages.add_msg(syn_msg, self.seqNum)
 
     def response_FIN(self):
-        headerDict = defaultHeaderDict.copy().update({
+        headerDict = defaultHeaderDict.copy()
+        headerDict.update({
             Sec.sPort: self.conn.port,
             Sec.dPort: self.destPort,
             Sec.seqNum: self.seqNum,
@@ -62,6 +66,7 @@ class serverConn:
         self.seqNum += 1
         self.clientSeq += 1
         self.messages.add_msg(fin_msg, self.seqNum)
+        
 
     def process_data(self, data, headerDict: dict):
         if not check_header_checksum(data):
@@ -77,23 +82,42 @@ class serverConn:
                 return
             # Normal data message
             if headerDict[Sec.seqNum] == self.clientSeq:
-                if self.recvWindow.length + PACKET_SIZE < MAX_BUFFER_SIZE:
+                if self.recvWindow.length + PACKET_SIZE <= MAX_BUFFER_SIZE:
                     logger.debug('Added data %d to buffer' % headerDict[Sec.seqNum])
                     self.recvWindow.add(data[defaultHeaderLen+1:])
                     self.clientSeq += PACKET_SIZE
                     self.ack_message()
+            else:
+                logger.debug('Discarded packet %d not arrived in order' % headerDict[Sec.seqNum])
         if headerDict[Sec.FIN] and self.state == RecvStates.ESTABLISHED:
             self.update_state(RecvStates.CLOSE_WAIT)
             # Client closing connection
             self.response_FIN()
 
     def send_msg(self, data):
-        pass
+        headerDict = defaultHeaderDict.copy()
+        headerDict.update({
+            Sec.sPort: self.conn.port,
+            Sec.dPort: self.destPort,
+            Sec.seqNum: self.seqNum,
+            Sec.ackNum: self.clientSeq,
+            Sec.SYN: 0,
+            Sec.ACK: 0,
+            Sec.FIN: 0
+        })
+        headerData = dict_to_header(headerDict)
+        fill_checksum(headerData, data)
+        logger.debug("data message sent, seq: " + str(self.seqNum))
+        data_msg = message(headerData + data, self.conn)
+        data_msg.send_with_timer(self.addr)
+        self.seqNum += len(data)
+        self.messages.add_msg(data_msg, self.seqNum)
 
 
     # Send the ack message to client
     def ack_message(self):
-        headerDict = defaultHeaderDict.copy().update({
+        headerDict = defaultHeaderDict.copy()
+        headerDict.update({
             Sec.sPort: self.conn.port,
             Sec.dPort: self.destPort,
             Sec.seqNum: self.seqNum,
@@ -109,17 +133,23 @@ class serverConn:
         ack_msg.send(self.addr)
 
 
+    def removeSelf(self):
+        self.conn.removeConn(self.addr)
+
+
 class rUDPServer:
-    def __init__(self, ip, port, application):
+    def __init__(self, ip, port, app):
         self.conn = rUDPConnection(ip, port)
         # The server will identify each connection with
         # a tuple of clients' address and port
         self.connections = {}
+        self.app = app
 
     def recv_msg(self):
         while True:
             data, addr = self.conn.socket.recvfrom(2048)
-            threading.Thread(target=self.process_recv_msg, args=(data, addr))
+            recv_thread = threading.Thread(target=self.process_recv_msg, args=[data, addr])
+            recv_thread.start()
 
     def process_recv_msg(self, data, addr):
         headerDict = header_to_dict(data)
@@ -128,4 +158,10 @@ class rUDPServer:
             self.connections[addr] = serverConn(addr, self.conn)
             self.connections[addr].clientSeq = headerDict[Sec.seqNum]
         else:
-            self.connections[addr].process_data(data, headerDict)
+            if addr in self.connections:
+                self.connections[addr].process_data(data, headerDict)
+            else:
+                logger.debug('Received message from unexpected sender')
+
+    def removeConn(self, addr):
+        self.connections.pop(addr)

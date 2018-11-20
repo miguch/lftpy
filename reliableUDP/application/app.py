@@ -1,7 +1,7 @@
 import threading
 from abc import abstractmethod
 
-class application:
+class app:
     def __init__(self):
         pass
 
