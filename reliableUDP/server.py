@@ -16,9 +16,38 @@ class serverConn:
         self.seqNum = 0
         self.clientSeq = 0
         self.messages = msgPool()
-        self.recvWindow = rcvBuffer()
-
+        self.recvWin = rcvBuffer()
+        self.sendWin = sndBuffer()
+        self.canSend = True
         logger.debug('Create a server connection to %s' % str(addr))
+
+    def consume_rcv_buffer(self):
+        if self.recvWin.get_win() == 0:
+            headerDict = defaultHeaderDict.copy()
+            headerDict.update({
+                Sec.sPort: self.conn.port,
+                Sec.dPort: self.destPort,
+                Sec.ackNum: 0,
+                Sec.ACK: 1,
+                Sec.SYN: 0,
+                Sec.recvWin: 1
+            })
+            headerData = dict_to_header(headerDict)
+            fill_checksum(headerData, bytearray())
+            win_msg = message(headerData, self.conn)
+            win_msg.send_with_timer((self.destIP, self.destPort))
+            # notify sender to send
+        data = self.recvWin.pop()
+        return data
+
+    # for app to use
+    def append_snd_buffer(self, data: bytearray):
+        full = self.sendWin.add(data)
+        if full:
+            return False    #sending buffer cannot add for now
+        if self.canSend:
+            tosend = self.sendWin.send()
+            self.send_msg(tosend)
 
     def update_state(self, newState):
         logger.debug("State: %s->%s" % (self.state, newState))
@@ -26,7 +55,7 @@ class serverConn:
 
     def handshake(self):
         # random seq
-        self.seqNum = random.randint(0, 2 ** 16)
+        self.seqNum = random.randint(1, 2 ** 16)
         headerDict = defaultHeaderDict.copy()
         headerDict.update({
             Sec.sPort: self.conn.port,
@@ -44,7 +73,7 @@ class serverConn:
         self.update_state(RecvStates.SYN_REVD)
         self.seqNum += 1
         self.clientSeq += 1
-        self.recvWindow.baseSeq = self.clientSeq
+        self.recvWin.baseSeq = self.clientSeq
         self.messages.add_msg(syn_msg, self.seqNum)
 
     def response_FIN(self):
@@ -77,17 +106,45 @@ class serverConn:
             self.messages.ack_to_num(headerDict[Sec.ackNum])
             if self.state == RecvStates.SYN_REVD:
                 self.update_state(RecvStates.ESTABLISHED)
+            else:
+                self.sendWin.ack()
+                if headerDict[Sec.recvWin] == 0:
+                    self.canSend = False
+                if headerDict[Sec.recvWin] > 0:
+                    if headerDict[Sec.ackNum] > 0:
+                        self.canSend = True
+                    else:
+                        # notify app to send
+                        pass
         else:
             if len(data) - defaultHeaderLen != PACKET_SIZE:
                 logger.debug('Received data with invalid length, discarded')
                 return
             # Normal data message
             if headerDict[Sec.seqNum] == self.clientSeq:
-                if self.recvWindow.length + PACKET_SIZE <= MAX_BUFFER_SIZE:
-                    logger.debug('Added data %d to buffer' % headerDict[Sec.seqNum])
-                    self.recvWindow.add(data[defaultHeaderLen+1:])
-                    self.clientSeq += PACKET_SIZE
-                    self.ack_message()
+                if self.recvWin.get_win() > 0:
+                    logger.debug('add data with seq %d to receiving window' % headerDict[Sec.seqNum])
+                    flag = self.recvWin.add(data[defaultHeaderLen+1:])
+                    if flag:
+                        self.clientSeq += PACKET_SIZE
+                        self.ack_message()
+                        data = self.recvWin.peek()
+                        # notify app to upload data
+                if self.recvWin.get_win() == 0:
+                    logger.debug('rcvWindow full')
+                    headerDict = defaultHeaderDict.copy()
+                    headerDict.update({
+                        Sec.sPort: self.conn.port,
+                        Sec.dPort: self.destPort,
+                        Sec.ackNum: 0,
+                        Sec.ACK: 1,
+                        Sec.SYN: 0,
+                        Sec.recvWin: self.recvWin.get_win()
+                    })
+                    headerData = dict_to_header(headerDict)
+                    fill_checksum(headerData, bytearray())
+                    win_msg = message(headerData, self.conn)
+                    win_msg.send((self.destIP, self.destPort))
             else:
                 logger.debug('Discarded packet %d not arrived in order' % headerDict[Sec.seqNum])
         if headerDict[Sec.FIN] and self.state == RecvStates.ESTABLISHED:
@@ -104,8 +161,7 @@ class serverConn:
             Sec.ackNum: self.clientSeq,
             Sec.SYN: 0,
             Sec.ACK: 0,
-            Sec.FIN: 0,
-            Sec.recvWin: self.recvWindow.getWin()
+            Sec.FIN: 0
         })
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, data)

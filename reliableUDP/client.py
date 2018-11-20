@@ -18,7 +18,37 @@ class rUDPClient:
         self.canSend = True
         self.messages = msgPool()
         self.recvWin = rcvBuffer()
+        self.sendWin = sndBuffer()
         self.app = app
+
+    def consume_rcv_buffer(self):
+        if self.recvWin.get_win() == 0:
+            headerDict = defaultHeaderDict.copy()
+            headerDict.update({
+                Sec.sPort: self.port,
+                Sec.dPort: self.destPort,
+                Sec.ackNum: 0,
+                Sec.ACK: 1,
+                Sec.SYN: 0,
+                Sec.recvWin: 1
+            })
+            headerData = dict_to_header(headerDict)
+            fill_checksum(headerData, bytearray())
+            win_msg = message(headerData, self.conn)
+            win_msg.send_with_timer((self.destIP, self.destPort))
+            # notify sender to send
+        data = self.recvWin.pop()
+        return data
+
+    # for app to use
+    def append_snd_buffer(self, data: bytearray):
+        full = self.sendWin.add(data)
+        if full:
+            return False    #sending buffer cannot add for now
+        if self.canSend:
+            tosend = self.sendWin.send()
+            self.send_msg(tosend)
+        
 
     def update_state(self, newState):
         logger.debug("State: %s->%s" % (self.state, newState))
@@ -26,7 +56,7 @@ class rUDPClient:
 
     def establish_conn(self):
         # random seq in first handshake
-        self.seqNum = random.randint(0, 2 ** 16)
+        self.seqNum = random.randint(1, 2 ** 16)
         headerDict = defaultHeaderDict.copy()
         headerDict.update({
             Sec.sPort: self.port,
@@ -98,8 +128,6 @@ class rUDPClient:
         if self.state == SendStates.CLOSED:
             logger.error("Sending message without establishing connection.")
             raise Exception("Connection not established.")
-        if not self.canSend:
-            return False
         headerDict = defaultHeaderDict.copy()
         headerDict.update({
             Sec.sPort: self.conn.port,
@@ -109,7 +137,6 @@ class rUDPClient:
             Sec.SYN: 0,
             Sec.ACK: 0,
             Sec.FIN: 0,
-            Sec.recvWin: self.recvWin.getWin()
         })
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, data)
@@ -210,27 +237,39 @@ class rUDPClient:
             elif self.state == SendStates.FIN_WAIT_2 and headerDict[Sec.FIN]:
                 self.third_wavehand()
             else:
-                if headerDict[Sec.recvWin] > 0:
-                    self.canSend = True
-                else:
+                self.sendWin.ack()
+                if headerDict[Sec.recvWin] == 0:
                     self.canSend = False
+                if headerDict[Sec.recvWin] > 0:
+                    if headerDict[Sec.ackNum] > 0:
+                        self.canSend = True
+                    else:
+                        # notify app to send
+                        pass
         else:
+            if len(data) - defaultHeaderLen != PACKET_SIZE:
+                logger.debug('Received data with invalid length, discarded')
+                return
             # normal data
             if headerDict[Sec.seqNum] == self.serverSeq:
-                if self.recvWin.getWin() > 0:
+                if self.recvWin.get_win() > 0:
                     logger.debug('add data with seq %d to receiving window' % headerDict[Sec.seqNum])
-                    self.recvWin.add(data[defaultHeaderLen+1:])
-                    self.serverSeq += PACKET_SIZE
-                    self.ack_msg()
-                else:
-                    logger.debug('Discard packet %d: rcvWindow full' % headerDict[Sec.seqNum])
+                    flag = self.recvWin.add(data[defaultHeaderLen+1:])
+                    if flag:
+                        self.serverSeq += PACKET_SIZE
+                        self.ack_msg()
+                        data = self.recvWin.peek()
+                        # notify app to upload data
+                if self.recvWin.get_win() == 0:
+                    logger.debug('rcvWindow full')
                     headerDict = defaultHeaderDict.copy()
                     headerDict.update({
                         Sec.sPort: self.port,
                         Sec.dPort: self.destPort,
+                        Sec.ackNum: 0,
                         Sec.ACK: 1,
                         Sec.SYN: 0,
-                        Sec.recvWin: self.recvWin.getWin()
+                        Sec.recvWin: self.recvWin.get_win()
                     })
                     headerData = dict_to_header(headerDict)
                     fill_checksum(headerData, bytearray())
@@ -248,7 +287,7 @@ class rUDPClient:
             Sec.ackNum: self.serverSeq,
             Sec.SYN: 0,
             Sec.ACK: 1,
-            Sec.FIN: 1
+            Sec.FIN: 0
         })
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, bytearray())

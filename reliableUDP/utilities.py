@@ -180,7 +180,7 @@ class rcvBuffer:
         self.lock.acquire()
         try:
             if self.length + PACKET_SIZE > MAX_BUFFER_SIZE:
-                raise Exception('buffer overflow when adding data.')
+                return False    # buffer overflow
 
             self.buffer[self.lastByteRcvd:self.lastByteRcvd+PACKET_SIZE] = data
             self.lastByteRcvd += PACKET_SIZE
@@ -191,7 +191,7 @@ class rcvBuffer:
         finally:
             self.lock.release()    
 
-    def getWin(self):
+    def get_win(self):
         return MAX_BUFFER_SIZE - self.length
 
 
@@ -204,9 +204,6 @@ class rcvBuffer:
     def pop(self):
         self.lock.acquire()
         try:
-            if self.getWin() == 0:
-                # notify the sender to send
-                pass
             result = self.peek()
             self.lastByteRead += PACKET_SIZE
             if self.lastByteRead == MAX_BUFFER_SIZE:
@@ -227,11 +224,41 @@ class sndBuffer:
         # Lock buffer when accessing
         self.lock = threading.Lock()
 
-    def send(self):
-        pass
+    def add(self, data: bytearray):
+        self.lock.acquire()
+        try:
+            if self.length + PACKET_SIZE > MAX_BUFFER_SIZE:
+                return True
 
-    def pop(self):
-        pass
+            self.buffer[self.lastByteReady:self.lastByteReady+PACKET_SIZE] = data
+            self.lastByteReady += PACKET_SIZE
+            if self.lastByteReady == MAX_BUFFER_SIZE:
+                self.lastByteReady = 0
+            self.length += PACKET_SIZE
+            
+        finally:
+            self.lock.release()    
+    
+    def ack(self):
+        self.lock.acquire()
+        try:
+            self.lastByteAcked += PACKET_SIZE
+            if self.lastByteAcked == MAX_BUFFER_SIZE:
+                self.lastByteAcked = 0
+            self.length -= PACKET_SIZE
+        finally:
+            self.lock.release()
+
+    def send(self):
+        self.lock.acquire()
+        try:
+            tosend = self.buffer[self.lastByteSent: self.lastByteSent + PACKET_SIZE]
+            self.lastByteSent += PACKET_SIZE
+            if self.lastByteSent == MAX_BUFFER_SIZE:
+                self.lastByteSent = 0
+            return tosend
+        finally:
+            self.lock.release()
 
 
     

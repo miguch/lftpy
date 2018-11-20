@@ -25,8 +25,8 @@ class message:
 
     def send_with_timer(self, destAddr):
         if self.timeoutTime > 8:
-            logger.warning('Timeout exceeds 3 times, stop resending')
-            return
+            logger.warning('Timeout exceeds 3 times, reset timeout time')
+            self.timeoutTime = 1
         if not self.acked:
             self.send(destAddr)
             t = threading.Timer(self.timeoutTime, self.send_with_timer, args=[destAddr])
