@@ -15,8 +15,9 @@ class rUDPClient:
         self.destPort = 0
         self.seqNum = 0
         self.serverSeq = 0
+        self.canSend = True
         self.messages = msgPool()
-        self.recvWin = circleBuffer()
+        self.recvWin = rcvBuffer()
         self.app = app
 
     def update_state(self, newState):
@@ -62,7 +63,6 @@ class rUDPClient:
         syn_msg.send_with_timer((self.destIP, self.destPort))
         self.messages.add_msg(syn_msg, self.seqNum+1)
         self.update_state(SendStates.ESTABLISHED)
-        self.recvWin.baseSeq = self.seqNum
 
     def handshake(self):
         logger.debug('Performing first handshake')
@@ -98,6 +98,8 @@ class rUDPClient:
         if self.state == SendStates.CLOSED:
             logger.error("Sending message without establishing connection.")
             raise Exception("Connection not established.")
+        if not self.canSend:
+            return False
         headerDict = defaultHeaderDict.copy()
         headerDict.update({
             Sec.sPort: self.conn.port,
@@ -106,7 +108,8 @@ class rUDPClient:
             Sec.ackNum: self.serverSeq,
             Sec.SYN: 0,
             Sec.ACK: 0,
-            Sec.FIN: 0
+            Sec.FIN: 0,
+            Sec.recvWin: self.recvWin.getWin()
         })
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, data)
@@ -206,14 +209,33 @@ class rUDPClient:
                 self.second_wavehand()
             elif self.state == SendStates.FIN_WAIT_2 and headerDict[Sec.FIN]:
                 self.third_wavehand()
+            else:
+                if headerDict[Sec.recvWin] > 0:
+                    self.canSend = True
+                else:
+                    self.canSend = False
         else:
             # normal data
             if headerDict[Sec.seqNum] == self.serverSeq:
-                if self.recvWin.length + PACKET_SIZE <= MAX_BUFFER_SIZE:
+                if self.recvWin.getWin() > 0:
                     logger.debug('add data with seq %d to receiving window' % headerDict[Sec.seqNum])
                     self.recvWin.add(data[defaultHeaderLen+1:])
                     self.serverSeq += PACKET_SIZE
                     self.ack_msg()
+                else:
+                    logger.debug('Discard packet %d: rcvWindow full' % headerDict[Sec.seqNum])
+                    headerDict = defaultHeaderDict.copy()
+                    headerDict.update({
+                        Sec.sPort: self.port,
+                        Sec.dPort: self.destPort,
+                        Sec.ACK: 1,
+                        Sec.SYN: 0,
+                        Sec.recvWin: self.recvWin.getWin()
+                    })
+                    headerData = dict_to_header(headerDict)
+                    fill_checksum(headerData, bytearray())
+                    win_msg = message(headerData, self.conn)
+                    win_msg.send((self.destIP, self.destPort))
             else:
                 logger.debug('Discarded packet %d not arrived in order' % headerDict[Sec.seqNum])        
 

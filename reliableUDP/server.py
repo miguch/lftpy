@@ -16,7 +16,8 @@ class serverConn:
         self.seqNum = 0
         self.clientSeq = 0
         self.messages = msgPool()
-        self.recvWindow = circleBuffer()
+        self.recvWindow = rcvBuffer()
+
         logger.debug('Create a server connection to %s' % str(addr))
 
     def update_state(self, newState):
@@ -103,7 +104,8 @@ class serverConn:
             Sec.ackNum: self.clientSeq,
             Sec.SYN: 0,
             Sec.ACK: 0,
-            Sec.FIN: 0
+            Sec.FIN: 0,
+            Sec.recvWin: self.recvWindow.getWin()
         })
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, data)

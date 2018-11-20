@@ -167,12 +167,11 @@ MAX_BUFFER_SIZE = 524288
 PACKET_SIZE = 1024
 
 # 512kb receive window, store with a array
-class circleBuffer:
+class rcvBuffer:
     def __init__(self):
         self.buffer = bytearray(MAX_BUFFER_SIZE)
-        self.baseIndex = 0
-        self.baseSeq = 0
-        self.endIndex = 0
+        self.lastByteRead = 0
+        self.lastByteRcvd = 0
         self.length = 0
         # Lock buffer when accessing
         self.lock = threading.Lock()
@@ -183,32 +182,64 @@ class circleBuffer:
             if self.length + PACKET_SIZE > MAX_BUFFER_SIZE:
                 raise Exception('buffer overflow when adding data.')
 
-            self.buffer[self.endIndex:self.endIndex+PACKET_SIZE] = data
-            self.endIndex += PACKET_SIZE
-            if self.endIndex == MAX_BUFFER_SIZE:
-                self.endIndex = 0
+            self.buffer[self.lastByteRcvd:self.lastByteRcvd+PACKET_SIZE] = data
+            self.lastByteRcvd += PACKET_SIZE
+            if self.lastByteRcvd == MAX_BUFFER_SIZE:
+                self.lastByteRcvd = 0
             self.length += PACKET_SIZE
+            
         finally:
             self.lock.release()    
+
+    def getWin(self):
+        return MAX_BUFFER_SIZE - self.length
+
 
     def peek(self):
         if self.length == 0:
             raise Exception('Reading an empty buffer.')
-        return self.buffer[self.baseIndex: self.baseIndex + PACKET_SIZE]
+        return self.buffer[self.lastByteRead: self.lastByteRead + PACKET_SIZE]
 
 
     def pop(self):
         self.lock.acquire()
         try:
+            if self.getWin() == 0:
+                # notify the sender to send
+                pass
             result = self.peek()
-            self.baseIndex += PACKET_SIZE
-            if self.baseIndex == MAX_BUFFER_SIZE:
-                self.baseIndex = 0
+            self.lastByteRead += PACKET_SIZE
+            if self.lastByteRead == MAX_BUFFER_SIZE:
+                self.lastByteRead = 0
             self.length -= PACKET_SIZE
-            self.baseSeq += PACKET_SIZE
             return result
         finally:
             self.lock.release()
+
+# 512kb sending window, store with a array
+class sndBuffer:
+    def __init__(self):
+        self.buffer = bytearray(MAX_BUFFER_SIZE)
+        self.lastByteSent = 0
+        self.lastByteAcked = 0
+        self.lastByteReady = 0
+        self.length = 0
+        # Lock buffer when accessing
+        self.lock = threading.Lock()
+
+    def send(self):
+        pass
+
+    def pop(self):
+        pass
+
+
+    
+
+    
+
+
+    
 
 
 
