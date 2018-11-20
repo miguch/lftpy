@@ -97,11 +97,13 @@ def ip_to_bytes(ip: str):
 # using 1's complement
 def fill_checksum(header: bytearray, data: bytearray):
     checksum = 0
-    for i in range(0, int(len(header) / 2), 2):
+    header[16:18] = [0x00, 0x00]
+    for i in range(0, len(header), 2):
         val = ~int.from_bytes(header[i:i+2], byteorder='big', signed=False) & 0x0000ffff
         checksum = (val + checksum)
         checksum = (((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff))
-    for i in range(0, int(len(data) / 2), 2):
+        print(checksum)
+    for i in range(0, len(data), 2):
         val = ~int.from_bytes(data[i:i+2], byteorder='big', signed=False) & 0x0000ffff
         checksum = (val + checksum)
         checksum = ((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff)
@@ -110,13 +112,14 @@ def fill_checksum(header: bytearray, data: bytearray):
         val = ~int.from_bytes(pad, byteorder='big', signed=False) & 0x0000ffff
         checksum = (val + checksum)
         checksum = ((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff)
+    logger.debug('fill checksum: %d' % checksum)
     set_header_checksum(header, bytearray(int.to_bytes(checksum, byteorder='big', length=2, signed=False)))
 
 
 # Check the data using checksum from the header
 def check_header_checksum(data: bytearray):
     checksum = 0
-    for i in range(0, int(len(data) / 2), 2):
+    for i in range(0, len(data), 2):
         val = ~int.from_bytes(data[i:i+2], byteorder='big', signed=False) & 0x0000ffff
         checksum = (val + checksum)
         checksum = ((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff)
@@ -125,9 +128,9 @@ def check_header_checksum(data: bytearray):
         val = ~int.from_bytes(pad, byteorder='big', signed=False) & 0x0000ffff
         checksum = (val + checksum)
         checksum = ((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff)
-    result = ((checksum & 0x0000ffff) == 0)
+    result = ((checksum & 0x0000ffff) == 0x0000ffff or checksum == 0)
     if not result:
-        logger.debug("header checksum error.")
+        logger.debug("header checksum error. Received: %d" % checksum)
     return result
 
 
