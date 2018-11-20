@@ -128,7 +128,7 @@ def check_header_checksum(data: bytearray):
     result = ((checksum & 0x0000ffff) == 0)
     if not result:
         logger.debug("header checksum error.")
-    return False
+    return result
 
 
 def get_seq_num(header: bytearray):

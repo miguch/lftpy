@@ -1,7 +1,7 @@
 from .connection import rUDPConnection, message
 from .lftplog import logger
 from .utilities import *
-from .application import application
+from .application import app
 import random
 
 
