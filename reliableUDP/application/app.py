@@ -22,3 +22,7 @@ class app:
     def next(self, user):
         pass
 
+    @abstractmethod
+    def notify_remove_user(self, user):
+        pass
+

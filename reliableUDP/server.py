@@ -157,6 +157,7 @@ class rUDPServer:
             # First handshake
             self.connections[addr] = serverConn(addr, self.conn)
             self.connections[addr].clientSeq = headerDict[Sec.seqNum]
+            self.connections[addr].handshake()
         else:
             if addr in self.connections:
                 self.connections[addr].process_data(data, headerDict)

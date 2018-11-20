@@ -15,11 +15,15 @@ class server(app):
         self.ip = ip
         self.port = port
         self.rudp = rUDPServer(self.ip, self.port, self)
+        self.sessions = {}
 
     def next(self, user):
         pass
 
     def process_data(self, user):
+        pass
+
+    def notify_remove_user(self, user):
         pass
 
 
