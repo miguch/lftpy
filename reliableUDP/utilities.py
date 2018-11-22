@@ -11,6 +11,8 @@ RecvStates = Enum('RecvStates', ('CLOSED', 'LISTEN', 'SYN_REVD',
 SendStates = Enum('SendStates', ('CLOSED', 'SYN_SENT', 'ESTABLISHED',
                                  'FIN_WAIT_1', 'FIN_WAIT_2', 'TIME_WAIT'))
 
+CwndState = Enum('CwndState', ('SLOWSTART', 'CONGAVOID'))
+
 # The sections in TCP header
 # noinspection PyArgumentList
 Sec = Enum('headerStruct', ('sPort', 'dPort', 'seqNum', 'ackNum',
@@ -149,6 +151,9 @@ class msgPool:
     def add_msg(self, msg: message, expectACK):
         self.messages[expectACK] = msg
 
+    def get_mess(self, ackNum):
+        return self.messages[ackNum]
+
     def ack_msg(self, ackNum):
         if ackNum in self.messages:
             self.messages[ackNum].acked = True
@@ -217,19 +222,47 @@ class rcvBuffer:
 class sndBuffer:
     def __init__(self):
         self.buffer = bytearray(MAX_BUFFER_SIZE)
+        self.messages = {}
         self.lastByteSent = 0
         self.lastByteAcked = 0
         self.lastByteReady = 0
         self.length = 0
+        self.win = 0
+        self.cwnd = 0
+        self.state = CwndState.SLOWSTART
+        self.ssthresh = 0
+        self.adding = True
         # Lock buffer when accessing
         self.lock = threading.Lock()
+
+    def find_cong(self):
+        self.state = CwndState.SLOWSTART
+        self.ssthresh = self.cwnd // 2
+        self.cwnd = 1
+
+    def get_data(self):
+        datalist = []
+        i = self.lastByteSent
+        count = 0
+        while count < self.win:
+            datalist.append(self.buffer[i:i+PACKET_SIZE])
+            i += PACKET_SIZE
+            count += 1
+        return datalist
+
+    def set_cwnd(self, win):
+        self.lock.acquire()
+        try:
+            self.cwnd == win
+        finally:
+            self.lock.release()
 
     def add(self, data: bytearray):
         self.lock.acquire()
         try:
             if self.length + PACKET_SIZE > MAX_BUFFER_SIZE:
+                self.adding = False
                 return True
-
             self.buffer[self.lastByteReady:self.lastByteReady+PACKET_SIZE] = data
             self.lastByteReady += PACKET_SIZE
             if self.lastByteReady == MAX_BUFFER_SIZE:
@@ -239,24 +272,32 @@ class sndBuffer:
         finally:
             self.lock.release()    
     
-    def ack(self):
+    def ack(self, mess):
         self.lock.acquire()
         try:
-            self.lastByteAcked += PACKET_SIZE
-            if self.lastByteAcked == MAX_BUFFER_SIZE:
-                self.lastByteAcked = 0
-            self.length -= PACKET_SIZE
+            if self.state == CwndState.SLOWSTART:
+                if self.messages[self.lastByteAcked].is_acked():
+                    self.cwnd += 1
+                    if self.cwnd == self.ssthresh:
+                        self.state = CwndState.CONGAVOID
+                    self.lastByteAcked += PACKET_SIZE
+                if self.lastByteAcked == MAX_BUFFER_SIZE:
+                    self.lastByteAcked = 0
+                self.length -= PACKET_SIZE
+            else:
+                if self.messages[self.lastByteSent-1].is_acked():
+                    self.cwnd += 1
+                    self.lastByteAcked = self.lastByteSent - 1
         finally:
             self.lock.release()
 
-    def send(self):
+    def send(self, mess):
         self.lock.acquire()
         try:
-            tosend = self.buffer[self.lastByteSent: self.lastByteSent + PACKET_SIZE]
+            self.messages[self.lastByteSent] = mess
             self.lastByteSent += PACKET_SIZE
             if self.lastByteSent == MAX_BUFFER_SIZE:
                 self.lastByteSent = 0
-            return tosend
         finally:
             self.lock.release()
 

@@ -23,6 +23,9 @@ class message:
         # initial time out is 1000 ms
         self.timeoutTime = 1
 
+    def is_acked(self):
+        return self.acked
+
     def send_with_timer(self, destAddr):
         if self.timeoutTime > 8:
             logger.warning('Timeout exceeds 3 times, reset timeout time')
@@ -32,6 +35,7 @@ class message:
             t = threading.Timer(self.timeoutTime, self.send_with_timer, args=[destAddr])
             self.timeoutTime *= 2
             t.start()
+            #TODO: notify sndBuffer to change sstresh
 
     def send(self, destAddr):
         self.conn.socket.sendto(self.data, destAddr)

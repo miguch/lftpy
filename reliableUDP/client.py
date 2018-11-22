@@ -35,20 +35,35 @@ class rUDPClient:
             headerData = dict_to_header(headerDict)
             fill_checksum(headerData, bytearray())
             win_msg = message(headerData, self.conn)
-            win_msg.send_with_timer((self.destIP, self.destPort))
-            # notify sender to send
+            win_msg.send((self.destIP, self.destPort))
         data = self.recvWin.pop()
         return data
+
+    def check_win(self):
+        if self.sendWin.state == CwndState.SLOWSTART:
+            pass
+        
 
     # for app to use
     def append_snd_buffer(self, data: bytearray):
         full = self.sendWin.add(data)
         if full:
             return False    #sending buffer cannot add for now
-        if self.canSend:
-            tosend = self.sendWin.send()
-            self.send_msg(tosend)
+        if self.sendWin.cwnd == 0:  #first file trunk
+            self.sendWin.cwnd = 1
+            self.sendWin.win = 1
+            self.sendWin.ssthresh = 16
+            self.sendWin.state = CwndState.SLOWSTART
+            self.check_cong_and_send()
         
+    def check_cong_and_send(self):
+        datalist = self.sendWin.get_data()
+        for data in datalist:
+            self.send_msg(data)
+        if self.sendWin.adding == False:
+            #TODO: notify app to add
+            pass
+
 
     def update_state(self, newState):
         logger.debug("State: %s->%s" % (self.state, newState))
@@ -74,7 +89,6 @@ class rUDPClient:
         self.messages.add_msg(syn_msg, self.seqNum+1)
         self.update_state(SendStates.SYN_SENT)
 
-
     def third_handshake(self):
         self.seqNum = self.seqNum + 1
         headerDict = defaultHeaderDict.copy()
@@ -93,6 +107,7 @@ class rUDPClient:
         syn_msg.send_with_timer((self.destIP, self.destPort))
         self.messages.add_msg(syn_msg, self.seqNum+1)
         self.update_state(SendStates.ESTABLISHED)
+        # notify app handshake is successful
 
     def handshake(self):
         logger.debug('Performing first handshake')
@@ -108,7 +123,6 @@ class rUDPClient:
         self.messages.ack_msg(self.seqNum+1)
         self.serverSeq = headerDict[Sec.seqNum]
         self.third_handshake()
-
 
     def check_establish_header(self, headerDict: dict):
         if headerDict[Sec.dPort] != self.port or headerDict[Sec.sPort] != self.destPort:
@@ -145,6 +159,7 @@ class rUDPClient:
         data_msg.send_with_timer((self.destIP, self.destPort))
         self.seqNum += len(data)
         self.messages.add_msg(data_msg, self.seqNum)
+        self.sendWin.send(data_msg)
 
     # initiate Client's first wavehand, fourth wavehand is triggered when the second 
     # and third wavehand are received from server.
@@ -231,18 +246,18 @@ class rUDPClient:
         headerDict = header_to_dict(data)
         if headerDict[Sec.ACK]:
             # ack message
+            mess = self.messages.get_mess([headerDict[Sec.ackNum]])
             self.messages.ack_to_num(headerDict[Sec.ackNum])
             if headerDict[Sec.ackNum] == self.seqNum and self.state == SendStates.FIN_WAIT_1:
                 self.second_wavehand()
             elif self.state == SendStates.FIN_WAIT_2 and headerDict[Sec.FIN]:
                 self.third_wavehand()
             else:
-                self.sendWin.ack()
-                if headerDict[Sec.recvWin] == 0:
-                    self.canSend = False
+                self.sendWin.win = min(headerDict[Sec.recvWin], self.sendWin.win)
                 if headerDict[Sec.recvWin] > 0:
                     if headerDict[Sec.ackNum] > 0:
-                        self.canSend = True
+                        self.sendWin.ack(mess)
+                        self.check_cong_and_send()
                     else:
                         # notify app to send
                         pass

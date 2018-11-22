@@ -45,9 +45,20 @@ class serverConn:
         full = self.sendWin.add(data)
         if full:
             return False    #sending buffer cannot add for now
-        if self.canSend:
-            tosend = self.sendWin.send()
-            self.send_msg(tosend)
+        if self.sendWin.cwnd == 0:  #first file trunk
+            self.sendWin.cwnd = 1
+            self.sendWin.win = 1
+            self.sendWin.ssthresh = 16
+            self.sendWin.state = CwndState.SLOWSTART
+            self.check_cong_and_send()
+
+    def check_cong_and_send(self):
+        datalist = self.sendWin.get_data()
+        for data in datalist:
+            self.send_msg(data)
+        if self.sendWin.adding == False:
+            #TODO: notify app to add
+            pass
 
     def update_state(self, newState):
         logger.debug("State: %s->%s" % (self.state, newState))
@@ -103,16 +114,16 @@ class serverConn:
             logger.debug('Header checksum check failed.')
             return
         if headerDict[Sec.ACK]:
+            mess = self.messages.get_mess([headerDict[Sec.ackNum]])
             self.messages.ack_to_num(headerDict[Sec.ackNum])
             if self.state == RecvStates.SYN_REVD:
                 self.update_state(RecvStates.ESTABLISHED)
             else:
-                self.sendWin.ack()
-                if headerDict[Sec.recvWin] == 0:
-                    self.canSend = False
+                self.sendWin.win = min(headerDict[Sec.recvWin], self.sendWin.win)
                 if headerDict[Sec.recvWin] > 0:
                     if headerDict[Sec.ackNum] > 0:
-                        self.canSend = True
+                        self.sendWin.ack(mess)
+                        self.check_cong_and_send()
                     else:
                         # notify app to send
                         pass
@@ -170,6 +181,7 @@ class serverConn:
         data_msg.send_with_timer(self.addr)
         self.seqNum += len(data)
         self.messages.add_msg(data_msg, self.seqNum)
+        self.sendWin.send(data_msg)
 
 
     # Send the ack message to client
