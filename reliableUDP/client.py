@@ -23,6 +23,7 @@ class rUDPClient:
 
     def consume_rcv_buffer(self):
         if self.recvWin.get_win() == 0:
+            self.sendWin.set_win(1)
             headerDict = defaultHeaderDict.copy()
             headerDict.update({
                 Sec.sPort: self.port,
@@ -39,22 +40,18 @@ class rUDPClient:
         data = self.recvWin.pop()
         return data
 
-    def check_win(self):
-        if self.sendWin.state == CwndState.SLOWSTART:
-            pass
-        
-
     # for app to use
     def append_snd_buffer(self, data: bytearray):
         full = self.sendWin.add(data)
         if full:
             return False    #sending buffer cannot add for now
-        if self.sendWin.cwnd == 0:  #first file trunk
-            self.sendWin.cwnd = 1
-            self.sendWin.win = 1
+        if self.sendWin.get_cwnd() == 0:  #first file trunk
+            self.sendWin.set_cwnd(1)
+            self.sendWin.set_win(1)
             self.sendWin.ssthresh = 16
             self.sendWin.state = CwndState.SLOWSTART
             self.check_cong_and_send()
+        return True
         
     def check_cong_and_send(self):
         datalist = self.sendWin.get_data()
@@ -107,7 +104,7 @@ class rUDPClient:
         syn_msg.send_with_timer((self.destIP, self.destPort))
         self.messages.add_msg(syn_msg, self.seqNum+1)
         self.update_state(SendStates.ESTABLISHED)
-        # notify app handshake is successful
+        self.app.notify_next_move()
 
     def handshake(self):
         logger.debug('Performing first handshake')
@@ -151,6 +148,7 @@ class rUDPClient:
             Sec.SYN: 0,
             Sec.ACK: 0,
             Sec.FIN: 0,
+            Sec.recvWin: self.sendWin.get_win()
         })
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, data)
@@ -253,14 +251,13 @@ class rUDPClient:
             elif self.state == SendStates.FIN_WAIT_2 and headerDict[Sec.FIN]:
                 self.third_wavehand()
             else:
-                self.sendWin.win = min(headerDict[Sec.recvWin], self.sendWin.win)
+                self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
                 if headerDict[Sec.recvWin] > 0:
                     if headerDict[Sec.ackNum] > 0:
                         self.sendWin.ack(mess)
                         self.check_cong_and_send()
                     else:
-                        # notify app to send
-                        pass
+                        self.check_cong_and_send()
         else:
             if len(data) - defaultHeaderLen != PACKET_SIZE:
                 logger.debug('Received data with invalid length, discarded')

@@ -250,10 +250,23 @@ class sndBuffer:
             count += 1
         return datalist
 
-    def set_cwnd(self, win):
+    def get_win(self):
+        return self.win
+
+    def get_cwnd(self):
+        return self.cwnd
+        
+    def set_cwnd(self, cwnd):
         self.lock.acquire()
         try:
-            self.cwnd == win
+            self.cwnd == cwnd
+        finally:
+            self.lock.release()
+
+    def set_win(self, win):
+        self.lock.acquire()
+        try:
+            self.win == win
         finally:
             self.lock.release()
 

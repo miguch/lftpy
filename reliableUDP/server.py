@@ -7,7 +7,7 @@ from .lftplog import logger
 
 
 class serverConn:
-    def __init__(self, addr, conn: rUDPServer):
+    def __init__(self, addr, conn):
         # addr is the target address
         self.addr = addr
         self.destIP, self.destPort = addr
@@ -35,9 +35,7 @@ class serverConn:
             headerData = dict_to_header(headerDict)
             fill_checksum(headerData, bytearray())
             win_msg = message(headerData, self.conn)
-            win_msg.send_with_timer((self.destIP, self.destPort))
-            # notify sender to send
-            self.conn.app.notify_next_move()
+            win_msg.send((self.destIP, self.destPort))
         data = self.recvWin.pop()
         return data
 
@@ -46,9 +44,9 @@ class serverConn:
         full = self.sendWin.add(data)
         if full:
             return False    #sending buffer cannot add for now
-        if self.sendWin.cwnd == 0:  #first file trunk
-            self.sendWin.cwnd = 1
-            self.sendWin.win = 1
+        if self.sendWin.get_cwnd():  #first file trunk
+            self.sendWin.set_cwnd(1)
+            self.sendWin.set_win(1)
             self.sendWin.ssthresh = 16
             self.sendWin.state = CwndState.SLOWSTART
             self.check_cong_and_send()
@@ -121,7 +119,7 @@ class serverConn:
             if self.state == RecvStates.SYN_REVD:
                 self.update_state(RecvStates.ESTABLISHED)
             else:
-                self.sendWin.win = min(headerDict[Sec.recvWin], self.sendWin.win)
+                self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
                 if headerDict[Sec.recvWin] > 0:
                     if headerDict[Sec.ackNum] > 0:
                         self.sendWin.ack(mess)
