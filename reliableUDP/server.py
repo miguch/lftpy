@@ -7,7 +7,7 @@ from .lftplog import logger
 
 
 class serverConn:
-    def __init__(self, addr, conn):
+    def __init__(self, addr, conn: rUDPServer):
         # addr is the target address
         self.addr = addr
         self.destIP, self.destPort = addr
@@ -37,6 +37,7 @@ class serverConn:
             win_msg = message(headerData, self.conn)
             win_msg.send_with_timer((self.destIP, self.destPort))
             # notify sender to send
+            self.conn.app.notify_next_move()
         data = self.recvWin.pop()
         return data
 
@@ -51,6 +52,7 @@ class serverConn:
             self.sendWin.ssthresh = 16
             self.sendWin.state = CwndState.SLOWSTART
             self.check_cong_and_send()
+        return True
 
     def check_cong_and_send(self):
         datalist = self.sendWin.get_data()
@@ -125,8 +127,7 @@ class serverConn:
                         self.sendWin.ack(mess)
                         self.check_cong_and_send()
                     else:
-                        # notify app to send
-                        pass
+                        self.check_cong_and_send()
         else:
             if len(data) - defaultHeaderLen != PACKET_SIZE:
                 logger.debug('Received data with invalid length, discarded')
@@ -141,6 +142,7 @@ class serverConn:
                         self.ack_message()
                         data = self.recvWin.peek()
                         # notify app to upload data
+
                 if self.recvWin.get_win() == 0:
                     logger.debug('rcvWindow full')
                     headerDict = defaultHeaderDict.copy()
@@ -208,12 +210,16 @@ class serverConn:
 
 
 class rUDPServer:
-    def __init__(self, ip, port, app):
+    def __init__(self, ip, port, app: app):
         self.conn = rUDPConnection(ip, port)
         # The server will identify each connection with
         # a tuple of clients' address and port
         self.connections = {}
         self.app = app
+        listener = threading.Thread(target=self.recv_msg)
+        listener.start()
+        # Infinite listen loop
+        listener.join()
 
     def recv_msg(self):
         while True:

@@ -9,6 +9,11 @@ class serverSession:
         self.destIP = destIP
         self.destPort = destPort
 
+    def process_data(self, user):
+        pass
+
+    
+
 class server(app):
     def __init__(self, ip, port):
         app.__init__()
