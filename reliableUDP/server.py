@@ -5,7 +5,7 @@ from .utilities import *
 from .lftplog import logger
 
 class serverConn:
-    def __init__(self, addr, conn, app):
+    def __init__(self, addr, conn, app, server):
         # addr is the target address
         self.addr = addr
         self.destIP, self.destPort = addr
@@ -18,6 +18,7 @@ class serverConn:
         self.recvWin = rcvBuffer()
         self.sendWin = sndBuffer()
         self.canSend = True
+        self.server = server
         logger.debug('Create a server connection to %s' % str(addr))
 
     def consume_rcv_buffer(self):
@@ -163,7 +164,7 @@ class serverConn:
             # Client closing connection
             self.response_FIN()
             self.removeSelf()
-            self.notify_close((self.destIP, self.destPort))
+            self.app.remove_user((self.destIP, self.destPort))
 
     def send_msg(self, data):
         headerDict = defaultHeaderDict.copy()
@@ -206,7 +207,7 @@ class serverConn:
 
 
     def removeSelf(self):
-        self.conn.removeConn(self.addr)
+        self.server.removeConn(self.addr)
 
 
 class rUDPServer:
@@ -230,7 +231,7 @@ class rUDPServer:
         headerDict = header_to_dict(data)
         if headerDict[Sec.SYN] and not headerDict[Sec.ACK]:
             # First handshake
-            self.connections[addr] = serverConn(addr, self.conn, self.app)
+            self.connections[addr] = serverConn(addr, self.conn, self.app, self)
             self.connections[addr].clientSeq = headerDict[Sec.seqNum]
             self.connections[addr].handshake()
         else:

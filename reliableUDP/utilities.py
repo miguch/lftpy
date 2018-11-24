@@ -334,9 +334,14 @@ class message:
 class msgPool:
     def __init__(self):
         self.messages = {}
+        self.lock = threading.Lock()
 
     def add_msg(self, msg: message, expectACK):
-        self.messages[expectACK] = msg
+        try:
+            self.lock.acquire()
+            self.messages[expectACK] = msg
+        finally:
+            self.lock.release()
 
     def get_mess(self, ackNum):
         if ackNum in self.messages:
@@ -350,13 +355,17 @@ class msgPool:
 
     # ack all messages with ackNum smaller than or equal to the given ackNum
     def ack_to_num(self, ackNum):
-        to_pop = []
-        for key in self.messages:
-            if key <= ackNum:
-                self.ack_msg(key)
-                to_pop.append(key)
-        for k in to_pop:
-            self.messages.pop(k)
+        try:
+            self.lock.acquire()
+            to_pop = []
+            for key in self.messages:
+                if key <= ackNum:
+                    self.ack_msg(key)
+                    to_pop.append(key)
+            for k in to_pop:
+                self.messages.pop(k)
+        finally:
+            self.lock.release()
 
     
 
