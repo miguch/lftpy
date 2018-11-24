@@ -16,6 +16,8 @@ operations = Enum('operations', ('GET', 'SEND', 'LIST'))
 class client(app):
     def __init__(self, serverIP, serverPort, action, filename):
         app.__init__(self)
+        self.lock = threading.Lock()
+        self.lock.acquire()
         self.serverIP = serverIP
         self.serverPort = serverPort
         self.action = action
@@ -23,7 +25,6 @@ class client(app):
         self.rudp = rUDPClient(app=self)
         self.rudp.connect(self.serverIP, self.serverPort)
         self.state = clientStates.CLOSED
-        self.lock = threading.Lock()
         self.waitingList = []
         self.file = None
         self.fileSize = 0
@@ -35,6 +36,8 @@ class client(app):
         except FileNotFoundError as e:
             print(e)
             sys.exit()
+        finally:
+            self.lock.release()
 
     def close(self):
         self.rudp.finished = True
@@ -56,11 +59,11 @@ class client(app):
 
     def send_request(self):
         if self.action == operations.GET:
-            self.send_data('lGET %s' % self.filename)
+            self.send_data(b'lGET %s' % self.filename)
         elif self.action == operations.SEND:
-            self.send_data('lSEND %s' % self.filename)
+            self.send_data(b'lSEND %s' % self.filename)
         elif self.action == operations.LIST:
-            self.send_data('lLIST')
+            self.send_data(b'lLIST')
 
 
     def next(self, user):
@@ -90,7 +93,7 @@ class client(app):
                 if self.action == operations.SEND:
                     while True:
                         data = self.file.read(1020)
-                        print('\Uploaded %.2f%%.' % float(self.file.tell()) * 100 / self.fileSize, end='')
+                        print('\rUploaded %.2f%%.' % float(self.file.tell()) * 100 / self.fileSize, end='')
                         if self.file.tell() == self.fileSize:
                             print('\rFile upload completed')
                         if len(data) == 0:
@@ -173,7 +176,7 @@ def main():
     if re.match('^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]):\d{1,5}$', args.ServerAddr):
         # ip address
         ip = args.ServerAddr[:args.ServerAddr.index(':')]
-        port = args.ServerAddr[args.ServerAddr.index(':')+1:]
+        port = int(args.ServerAddr[args.ServerAddr.index(':')+1:])
     elif re.match('^(([a-zA-Z]{1})|([a-zA-Z]{1}[a-zA-Z]{1})|([a-zA-Z]{1}[0-9]{1})|([0-9]{1}[a-zA-Z]{1})|([a-zA-Z0-9][a-zA-Z0-9-_]{1,61}[a-zA-Z0-9]))\.([a-zA-Z]{2,6}|[a-zA-Z0-9-]{2,30}\.[a-zA-Z]{2,8}):\d{1,5}', args.ServerAddr):
         # domain name
         domain = args.ServerAddr[:args.ServerAddr.index(':')]

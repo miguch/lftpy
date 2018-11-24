@@ -111,7 +111,7 @@ class serverConn:
             logger.debug('Header checksum check failed.')
             return
         if headerDict[Sec.ACK]:
-            mess = self.messages.get_mess([headerDict[Sec.ackNum]])
+            mess = self.messages.get_mess(headerDict[Sec.ackNum])
             self.messages.ack_to_num(headerDict[Sec.ackNum])
             if self.state == RecvStates.SYN_REVD:
                 self.update_state(RecvStates.ESTABLISHED)

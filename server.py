@@ -21,6 +21,8 @@ commands = {
 
 class serverSession:
     def __init__(self, destIP, destPort, action, dataDir, conn: serverConn):
+        self.lock = threading.Lock()
+        self.lock.acquire()
         self.destIP = destIP
         self.destPort = destPort
         self.action = action
@@ -31,7 +33,8 @@ class serverSession:
         self.file = None
         self.fileSize = 0
         self.waitingList = []
-        self.lock = threading.Lock()
+        self.lock.release()
+
 
     def update_state(self, newState):
         logger.info('User %s:%d switch to state %s' % (self.destIP, self.destPort, newState))
