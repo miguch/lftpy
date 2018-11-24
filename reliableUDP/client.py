@@ -1,9 +1,9 @@
-from .connection import rUDPConnection, message
+from .connection import rUDPConnection
 from .lftplog import logger
 from .utilities import *
 from .application import app
 import random
-
+import socket
 
 class rUDPClient:
     def __init__(self, app):
@@ -20,7 +20,8 @@ class rUDPClient:
         self.recvWin = rcvBuffer()
         self.sendWin = sndBuffer()
         self.app = app
-        self.finished = False;
+        self.finished = False
+        self.listener = None
 
     def consume_rcv_buffer(self):
         if self.recvWin.get_win() == 0:
@@ -45,8 +46,8 @@ class rUDPClient:
     def append_snd_buffer(self, data: bytearray):
         full = self.sendWin.add(data)
         if full:
-            return False    #sending buffer cannot add for now
-        if self.sendWin.get_cwnd() == 0:  #first file trunk
+            return False    # sending buffer cannot add for now
+        if self.sendWin.get_cwnd() == 0:  # first file trunk
             self.sendWin.set_cwnd(1)
             self.sendWin.set_win(1)
             self.sendWin.ssthresh = 16
@@ -81,7 +82,7 @@ class rUDPClient:
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, bytearray())
         logger.debug("First handshake sent, seq: " + str(self.seqNum))
-        syn_msg = message(headerData, self.conn)
+        syn_msg = message(headerData, self.conn, self.sendWin)
         syn_msg.send_with_timer((self.destIP, self.destPort))
         self.messages.add_msg(syn_msg, self.seqNum+1)
         self.update_state(SendStates.SYN_SENT)
@@ -101,10 +102,15 @@ class rUDPClient:
         fill_checksum(headerData, bytearray())
         logger.debug("Third handshake sent, seq: " + str(self.seqNum))
         syn_msg = message(headerData, self.conn)
-        syn_msg.send_with_timer((self.destIP, self.destPort))
+        syn_msg.send((self.destIP, self.destPort))
         self.messages.add_msg(syn_msg, self.seqNum+1)
         self.update_state(SendStates.ESTABLISHED)
         self.app.notify_next_move()
+        # Start listening message
+        self.listener = threading.Thread(target=self.listen_msg, daemon=True)
+        self.listener.start()
+        self.listener.join()
+
 
     def handshake(self):
         logger.debug('Performing first handshake')
@@ -118,7 +124,7 @@ class rUDPClient:
             data, addr = self.conn.socket.recvfrom(100)
             headerDict = header_to_dict(data)
         self.messages.ack_msg(self.seqNum+1)
-        self.serverSeq = headerDict[Sec.seqNum]
+        self.serverSeq = headerDict[Sec.seqNum] + 1
         self.third_handshake()
 
     def check_establish_header(self, headerDict: dict):
@@ -153,11 +159,12 @@ class rUDPClient:
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, data)
         logger.debug("data message sent, seq: " + str(self.seqNum))
-        data_msg = message(headerData + data, self.conn)
+        data_msg = message(headerData + data, self.conn, self.sendWin)
         data_msg.send_with_timer((self.destIP, self.destPort))
         self.seqNum += len(data)
         self.messages.add_msg(data_msg, self.seqNum)
         self.sendWin.send(data_msg)
+
 
     # initiate Client's first wavehand, fourth wavehand is triggered when the second 
     # and third wavehand are received from server.
@@ -181,7 +188,7 @@ class rUDPClient:
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, bytearray())
         logger.debug("First wave sent, seq: " + str(self.seqNum))
-        syn_msg = message(headerData, self.conn)
+        syn_msg = message(headerData, self.conn, self.sendWin)
         syn_msg.send_with_timer((self.destIP, self.destPort))
         self.messages.add_msg(syn_msg, self.seqNum+1)
         self.update_state(SendStates.FIN_WAIT_1)
@@ -240,25 +247,27 @@ class rUDPClient:
         close_thread.start()
 
     def process_msg(self, data):
-        if check_header_checksum(data):
+        if not check_header_checksum(data):
             logger.debug('received a packet with invalid checksum')
         headerDict = header_to_dict(data)
         if headerDict[Sec.ACK]:
             # ack message
-            mess = self.messages.get_mess([headerDict[Sec.ackNum]])
-            self.messages.ack_to_num(headerDict[Sec.ackNum])
-            if headerDict[Sec.ackNum] == self.seqNum and self.state == SendStates.FIN_WAIT_1:
-                self.second_wavehand()
-            elif self.state == SendStates.FIN_WAIT_2 and headerDict[Sec.FIN]:
-                self.third_wavehand()
-            else:
-                self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
-                if headerDict[Sec.recvWin] > 0:
-                    if headerDict[Sec.ackNum] > 0:
-                        self.sendWin.ack(mess)
-                        self.check_cong_and_send()
-                    else:
-                        self.check_cong_and_send()
+            mess = self.messages.get_mess(headerDict[Sec.ackNum])
+            if mess is not None:
+                self.messages.ack_to_num(headerDict[Sec.ackNum])
+                logger.debug('Received ack message with ackNum=%d' % headerDict[Sec.ackNum])
+                if headerDict[Sec.ackNum] == self.seqNum and self.state == SendStates.FIN_WAIT_1:
+                    self.second_wavehand()
+                elif self.state == SendStates.FIN_WAIT_2 and headerDict[Sec.FIN]:
+                    self.third_wavehand()
+                else:
+                    self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
+                    if headerDict[Sec.recvWin] > 0:
+                        if headerDict[Sec.ackNum] > 0:
+                            self.sendWin.ack(mess)
+                            self.check_cong_and_send()
+                        else:
+                            self.check_cong_and_send()
         else:
             if len(data) - defaultHeaderLen != PACKET_SIZE:
                 logger.debug('Received data with invalid length, discarded')
@@ -267,7 +276,7 @@ class rUDPClient:
             if headerDict[Sec.seqNum] == self.serverSeq:
                 if self.recvWin.get_win() > 0:
                     logger.debug('add data with seq %d to receiving window' % headerDict[Sec.seqNum])
-                    flag = self.recvWin.add(data[defaultHeaderLen+1:])
+                    flag = self.recvWin.add(data[defaultHeaderLen:])
                     if flag:
                         self.serverSeq += PACKET_SIZE
                         self.ack_msg()
@@ -289,7 +298,7 @@ class rUDPClient:
                     win_msg = message(headerData, self.conn)
                     win_msg.send((self.destIP, self.destPort))
             else:
-                logger.debug('Discarded packet %d not arrived in order' % headerDict[Sec.seqNum])        
+                logger.debug('Discarded packet %d not arrived in order, Expecting: %d' % (headerDict[Sec.seqNum], self.serverSeq))
 
     def ack_msg(self):
         headerDict = defaultHeaderDict.copy()
@@ -310,11 +319,15 @@ class rUDPClient:
     
     # Start a thread for this function after establishing connection 
     def listen_msg(self):
+        self.conn.socket.settimeout(1)
         while not self.finished:
-            data, addr = self.conn.socket.recvfrom(2048)
-            if addr != (self.destIP, self.destPort):
-                logger.debug('Received message from unexpected sender')
+            try:
+                data, addr = self.conn.socket.recvfrom(2048)
+                if addr != (self.destIP, self.destPort):
+                    logger.debug('Received message from unexpected sender')
+                    continue
+                else:
+                    processor = threading.Thread(target=self.process_msg, args=[data], daemon=True)
+                    processor.start()
+            except socket.timeout:
                 continue
-            else:
-                processor = threading.Thread(target=self.process_msg, args=[data])
-                processor.start()

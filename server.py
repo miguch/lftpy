@@ -14,9 +14,9 @@ operations = Enum('operations', ('GET', 'SEND', 'LIST'))
 
 
 commands = {
-    'lSEND': operations.GET,
-    'lGET': operations.SEND,
-    'lLIST': operations.LIST
+    b'lSEND': operations.GET,
+    b'lGET': operations.SEND,
+    b'lLIST': operations.LIST
 }
 
 class serverSession:
@@ -40,16 +40,19 @@ class serverSession:
         logger.info('User %s:%d switch to state %s' % (self.destIP, self.destPort, newState))
         self.state = newState
 
-    def send_data(self, data):
+    def send_data(self, data, useBuffer):
         buf = bytearray(1024)
         length = len(data)
         buf[0:4] = int.to_bytes(length, length=4, byteorder='big')
         buf[4:4+length] = data
         pad_len = 1024 - 4 - length
         buf[4+length:1024] = b'\0' * pad_len
-        if not self.conn.append_snd_buffer(buf):
-            self.waitingList.append(buf)
-            return False
+        if useBuffer:
+            if not self.conn.append_snd_buffer(buf):
+                self.waitingList.append(buf)
+                return False
+        else:
+            self.conn.send_msg(buf)
         return True
 
     def next(self):
@@ -64,11 +67,11 @@ class serverSession:
                 while True:
                     data = self.file.read(1020)
                     if len(data) == 0:
-                        self.send_data(b'DONE')
+                        self.send_data(b'DONE', False)
                         break
                     else:
                         # Pause when we cannot add new data to send
-                        if not self.send_data(data):
+                        if not self.send_data(data, True):
                             break
 
     def response_req(self):
@@ -88,17 +91,17 @@ class serverSession:
         elif self.action == operations.LIST:
             fileList = os.listdir(self.dir)
             response = bytearray(json.dumps(fileList), encoding='utf-8')
-            self.send_data(response)
-            self.send_data(b'DONE')
+            self.send_data(response, False)
+            self.send_data(b'DONE', False)
         elif self.action == operations.SEND:
             # Sending file to client
             checker = Path(os.path.join(self.dir, self.filename))
             if checker.exists():
-                self.send_data(b'EXISTED %s' % self.filename)
-                self.send_data(b'DONE')
+                self.send_data(b'EXISTED %s' % self.filename, False)
+                self.send_data(b'DONE', False)
             self.file = open(os.path.join(self.dir, self.filename), 'wb')
             self.update_state(serverStates.WAIT_SIZE)
-            self.send_data(b'WAITING %s' % self.filename)
+            self.send_data(b'WAITING %s' % self.filename, False)
 
     def process_data(self, data):
         if self.action == operations.SEND:
@@ -112,37 +115,46 @@ class serverSession:
                     self.lock.acquire()
                     self.file.write(data)
                     if self.file.tell() == self.fileSize:
-                        self.send_data(b'DONE')
+                        self.send_data(b'DONE', False)
                 finally:
                     self.lock.release()
             
 
 class server(app):
     def __init__(self, ip, port, dataDir):
-        app.__init__(self)
-        self.ip = ip
-        self.port = port
-        self.dir = dataDir
-        self.rudp = rUDPServer(self.ip, self.port, self)
-        self.sessions = {}
+        try:
+            app.__init__(self)
+            self.lock = threading.Lock()
+            self.lock.acquire()
+            self.ip = ip
+            self.port = port
+            self.dir = dataDir
+            self.rudp = rUDPServer(self.ip, self.port, self)
+            self.sessions = {}
+        finally:
+            self.lock.release()
 
     def next(self, user):
-        sessions[user].next()
+        self.sessions[user].next()
 
     def process_data(self, user):
-        data = self.rudp.connections[user].consume_rcv_buffer()
-        length = int.from_bytes(data[:4], bytearray='big')
-        content = data[4:4+length]
-        if user not in self.sessions:
-            req = content.split(' ')
-            if req[0] in commands:
-                action = commands[req[0]]
-                self.sessions[user] = serverSession(user[0], user[1], action, self.dir, rudp.connections[user])
-                if len(req) > 1:
-                    self.sessions[user].filename = req[1]
-                self.sessions[user].response_req()
-        else:
-            self.sessions[user].process_data(content)
+        try:
+            self.lock.acquire()
+            data = self.rudp.connections[user].consume_rcv_buffer()
+            length = int.from_bytes(data[:4], byteorder='big')
+            content = data[4:4+length]
+            if user not in self.sessions:
+                req = bytes(content).split(b' ')
+                if req[0] in commands:
+                    action = commands[req[0]]
+                    self.sessions[user] = serverSession(user[0], user[1], action, self.dir, self.rudp.connections[user])
+                    if len(req) > 1:
+                        self.sessions[user].filename = req[1]
+                    self.sessions[user].response_req()
+            else:
+                self.sessions[user].process_data(content)
+        finally:
+            self.lock.release()
             
 
     def remove_user(self, user):
@@ -168,6 +180,7 @@ def main():
         return
     print('The address to listen on is %s:%d' % (args.addr, args.port))
     lftp_server = server(args.addr, args.port, args.datadir)
+    lftp_server.rudp.listener.join()
 
 
 if __name__ == "__main__":

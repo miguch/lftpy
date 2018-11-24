@@ -1,6 +1,6 @@
 from enum import Enum
 import threading
-from .connection import message
+from .connection import rUDPConnection
 from .lftplog import logger
 
 # noinspection PyArgumentList
@@ -11,7 +11,7 @@ RecvStates = Enum('RecvStates', ('CLOSED', 'LISTEN', 'SYN_REVD',
 SendStates = Enum('SendStates', ('CLOSED', 'SYN_SENT', 'ESTABLISHED',
                                  'FIN_WAIT_1', 'FIN_WAIT_2', 'TIME_WAIT'))
 
-CwndState = Enum('CwndState', ('SLOWSTART', 'CONGAVOID'))
+CwndState = Enum('CwndState', ('SLOWSTART', 'CONGAVOID', 'SHAKING'))
 
 # The sections in TCP header
 # noinspection PyArgumentList
@@ -143,27 +143,6 @@ def get_ack_num(header: bytearray):
     return int.from_bytes(header[8:12], byteorder='big', signed=False)
 
 
-class msgPool:
-    def __init__(self):
-        self.messages = {}
-
-    def add_msg(self, msg: message, expectACK):
-        self.messages[expectACK] = msg
-
-    def get_mess(self, ackNum):
-        return self.messages[ackNum]
-
-    def ack_msg(self, ackNum):
-        if ackNum in self.messages:
-            self.messages[ackNum].acked = True
-            self.messages.pop(ackNum)
-            logger.debug('ACKed message with ackNum: %d' % ackNum)
-
-    # ack all messages with ackNum smaller than or equal to the given ackNum
-    def ack_to_num(self, ackNum):
-        for key in self.messages:
-            if key <= ackNum:
-                self.ack_msg(key)
 
 
 MAX_BUFFER_SIZE = 524288
@@ -191,7 +170,7 @@ class rcvBuffer:
             if self.lastByteRcvd == MAX_BUFFER_SIZE:
                 self.lastByteRcvd = 0
             self.length += PACKET_SIZE
-            
+            return True
         finally:
             self.lock.release()    
 
@@ -228,16 +207,17 @@ class sndBuffer:
         self.length = 0
         self.win = 0
         self.cwnd = 0
-        self.state = CwndState.SLOWSTART
+        self.state = CwndState.SHAKING
         self.ssthresh = 0
         self.adding = True
         # Lock buffer when accessing
         self.lock = threading.Lock()
 
     def find_cong(self):
-        self.state = CwndState.SLOWSTART
-        self.ssthresh = self.cwnd // 2
-        self.cwnd = 1
+        if self.state != CwndState.SHAKING:
+            self.state = CwndState.SLOWSTART
+            self.ssthresh = self.cwnd // 2
+            self.cwnd = 1
 
     def get_data(self):
         datalist = []
@@ -258,14 +238,14 @@ class sndBuffer:
     def set_cwnd(self, cwnd):
         self.lock.acquire()
         try:
-            self.cwnd == cwnd
+            self.cwnd = cwnd
         finally:
             self.lock.release()
 
     def set_win(self, win):
         self.lock.acquire()
         try:
-            self.win == win
+            self.win = win
         finally:
             self.lock.release()
 
@@ -280,7 +260,7 @@ class sndBuffer:
             if self.lastByteReady == MAX_BUFFER_SIZE:
                 self.lastByteReady = 0
             self.length += PACKET_SIZE
-            
+            return False
         finally:
             self.lock.release()    
     
@@ -314,10 +294,69 @@ class sndBuffer:
             self.lock.release()
 
 
-    
 
-    
 
+class message:
+    def __init__(self, data, conn: rUDPConnection, sendBuf: sndBuffer=None):
+        self.acked = False
+        self.data = data
+        self.seqNum = int.from_bytes(data[4:8], byteorder='big', signed=False)
+        self.conn = conn
+        self.sendBuf = sendBuf
+        # initial time out is 1000 ms
+        self.timeoutTime = 1
+
+    def is_acked(self):
+        return self.acked
+
+    def send_with_timer(self, destAddr):
+        if self.timeoutTime > 8:
+            logger.warning('Timeout %d exceeds 3 times' % self.seqNum)
+            self.timeoutTime = 1
+        if not self.acked:
+            if self.timeoutTime != 1:
+                logger.debug('Resending message with seqNum=%d' % self.seqNum)
+            self.sendBuf.find_cong()
+            self.send(destAddr)
+            t = threading.Timer(self.timeoutTime, self.send_with_timer, args=[destAddr])
+            self.timeoutTime *= 2
+            t.start()
+        else:
+            logger.debug('Message with seqNum=%d finished' % self.seqNum)
+
+
+    def send(self, destAddr):
+        self.conn.socket.sendto(self.data, destAddr)
+
+
+
+
+class msgPool:
+    def __init__(self):
+        self.messages = {}
+
+    def add_msg(self, msg: message, expectACK):
+        self.messages[expectACK] = msg
+
+    def get_mess(self, ackNum):
+        if ackNum in self.messages:
+            return self.messages[ackNum]
+        return None
+
+    def ack_msg(self, ackNum):
+        if ackNum in self.messages:
+            self.messages[ackNum].acked = True
+            logger.debug('ACKed message with ackNum: %d' % ackNum)
+
+    # ack all messages with ackNum smaller than or equal to the given ackNum
+    def ack_to_num(self, ackNum):
+        to_pop = []
+        for key in self.messages:
+            if key <= ackNum:
+                self.ack_msg(key)
+                to_pop.append(key)
+        for k in to_pop:
+            self.messages.pop(k)
 
     
 

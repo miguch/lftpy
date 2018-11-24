@@ -13,6 +13,12 @@ from reliableUDP.application import app
 clientStates = Enum('clientStates', ('CLOSED', 'SENDREQUEST', 'DATA'))
 operations = Enum('operations', ('GET', 'SEND', 'LIST'))
 
+commands = {
+    'lsend': operations.GET,
+    'lget': operations.SEND,
+    'ls': operations.LIST
+}
+
 class client(app):
     def __init__(self, serverIP, serverPort, action, filename):
         app.__init__(self)
@@ -23,7 +29,6 @@ class client(app):
         self.action = action
         self.filename = filename
         self.rudp = rUDPClient(app=self)
-        self.rudp.connect(self.serverIP, self.serverPort)
         self.state = clientStates.CLOSED
         self.waitingList = []
         self.file = None
@@ -38,6 +43,7 @@ class client(app):
             sys.exit()
         finally:
             self.lock.release()
+        self.rudp.connect(self.serverIP, self.serverPort)
 
     def close(self):
         self.rudp.finished = True
@@ -45,36 +51,43 @@ class client(app):
             self.file.close()
         sys.exit()
 
-    def send_data(self, data):
+    def update_state(self, newState):
+        logger.debug('Client application new state: %s' % str(newState))
+        self.state = newState
+
+    def send_data(self, data, useBuffer):
         buf = bytearray(1024)
         length = len(data)
         buf[0:4] = int.to_bytes(length, length=4, byteorder='big')
         buf[4:4+length] = data
         pad_len = 1024 - 4 - length
         buf[4+length:1024] = b'\0' * pad_len
-        if not self.rudp.append_snd_buffer(buf):
-            self.waitingList.append(buf)
-            return False
+        if useBuffer:
+            if not self.rudp.append_snd_buffer(buf):
+                self.waitingList.append(buf)
+                return False
+        else:
+            self.rudp.send_msg(buf)
         return True
 
     def send_request(self):
         if self.action == operations.GET:
-            self.send_data(b'lGET %s' % self.filename)
+            self.send_data(b'lGET %s' % self.filename, False)
         elif self.action == operations.SEND:
-            self.send_data(b'lSEND %s' % self.filename)
+            self.send_data(b'lSEND %s' % self.filename, False)
         elif self.action == operations.LIST:
-            self.send_data(b'lLIST')
+            self.send_data(b'lLIST', False)
 
 
     def next(self, user):
         try:
             self.lock.acquire()
             if self.state == clientStates.CLOSED:
-                self.state = clientStates.SENDREQUEST
+                self.update_state(clientStates.SENDREQUEST)
                 self.send_request()
-                logger.info('Connected to server')
+                logger.info('Sending request to server')
             elif self.state == clientStates.SENDREQUEST:
-                self.state = clientStates.DATA
+                self.update_state(clientStates.DATA)
                 logger.info('Client application requiest sent')
                 if self.action == operations.SEND:
                     # send file size
@@ -82,7 +95,7 @@ class client(app):
                     self.file.seek(0, os.SEEK_END)
                     self.fileSize = self.file.tell()
                     self.file.seek(begin_pos, os.SEEK_SET)
-                    self.send_data(b'SIZE ' + int.to_bytes(self.fileSize, byteorder='little'))
+                    self.send_data(b'SIZE ' + int.to_bytes(self.fileSize, byteorder='little'), False)
             elif self.state == clientStates.DATA:
                 if len(self.waitingList) != 0:
                     while len(self.waitingList) != 0:
@@ -93,54 +106,60 @@ class client(app):
                 if self.action == operations.SEND:
                     while True:
                         data = self.file.read(1020)
-                        print('\rUploaded %.2f%%.' % float(self.file.tell()) * 100 / self.fileSize, end='')
+                        print('\rUploaded %.2f%%.' % (float(self.file.tell()) * 100 / self.fileSize), end='')
                         if self.file.tell() == self.fileSize:
                             print('\rFile upload completed')
                         if len(data) == 0:
                             break
                         else:
                             # Pause when we cannot add new data to send
-                            if not self.send_data(data):
+                            if not self.send_data(data, True):
                                 break
         finally:
             self.lock.release()
 
 
     def process_data(self, user):
-        data = self.rudp.consume_rcv_buffer()
-        length = int.from_bytes(data[:4], byteorder='big')
-        content = data[4:4+length]
-        if self.state == clientStates.SENDREQUEST:
-            if self.action == operations.SEND:
-                [cmd, arg] = content.split(' ')
-                if cmd == 'EXISTED' and arg == self.filename:
-                    print('File already existed on the server!')
+        try:
+            self.lock.acquire()
+            data = self.rudp.consume_rcv_buffer()
+            length = int.from_bytes(data[:4], byteorder='big')
+            content = data[4:4+length]
+            if self.state == clientStates.SENDREQUEST:
+                if self.action == operations.SEND:
+                    [cmd, arg] = content.split(b' ')
+                    if cmd == 'EXISTED' and arg == self.filename:
+                        print('File already existed on the server!')
+                        self.close()
+                    elif cmd == 'WAITING' and arg == self.filename:
+                        print('Sending the file now...')
+                        self.next()
+                elif self.action == operations.LIST:
+                    files = json.loads(content.decode())
+                    for name in files:
+                        print(name, end=' ')
+                    print()
+                    self.update_state(clientStates.DATA)
+                elif self.action == operations.GET:
+                    [cmd, arg] = content.split(' ')
+                    if cmd == 'NOTEXIST' and arg == self.filename:
+                        print('Requested file does not exist on the server!')
+                        self.close()
+                    elif cmd == 'SIZE':
+                        print('Receiving the file now ...')
+                        self.fileSize = int.from_bytes(arg, byteorder='little')
+                        self.next()
+            elif self.state == clientStates.DATA:
+                if content.decode() == 'DONE' and (self.file is None or self.file.tell() == self.fileSize):
+                    self.rudp.finish_conn()
                     self.close()
-                elif cmd == 'WAITING' and arg == self.filename:
-                    print('Sending the file now...')
-                    self.next()
-            elif self.action == operations.LIST:
-                files = json.loads(content)
-                for name in files:
-                    print(name, end=' ')
-                print()
-            elif self.action == operations.GET:
-                [cmd, arg] = content.split(' ')
-                if cmd == 'NOTEXIST' and arg == self.filename:
-                    print('Requested file does not exist on the server!')
-                    self.close()
-                elif cmd == 'SIZE':
-                    print('Receiving the file now ...')
-                    self.fileSize = int.from_bytes(arg, byteorder='little')
-                    self.next()
-        elif self.state == clientStates.DATA:
-            if content == 'DONE' and (self.file is None or self.file.tell() == self.fileSize):
-                self.rudp.finish_conn()
-            elif self.action == operations.GET:
-                self.file.write(content)
-                print('\rDownloaded %.2f%%.' % float(self.file.tell()) * 100 / self.fileSize, end='')
-                if self.file.tell() == self.fileSize:
-                    print('\rFile downloade completed')
+                elif self.action == operations.GET:
+                    self.file.write(content)
+                    print('\rDownloaded %.2f%%.' % float(self.file.tell()) * 100 / self.fileSize, end='')
+                    if self.file.tell() == self.fileSize:
+                        print('\rFile downloade completed')
+        finally:
+            self.lock.release()
 
     def notify_close(self, user):
         self.close()
@@ -151,11 +170,7 @@ class client(app):
 
 
 
-commands = {
-    'lsend': operations.GET,
-    'lget': operations.SEND,
-    'ls': operations.LIST
-}
+
 
 def main():
     parser = argparse.ArgumentParser(description='The client program of LFTP')

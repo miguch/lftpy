@@ -1,11 +1,11 @@
 import threading
 import random
-from .connection import rUDPConnection, message
+from .connection import rUDPConnection
 from .utilities import *
 from .lftplog import logger
 
 class serverConn:
-    def __init__(self, addr, conn):
+    def __init__(self, addr, conn, app):
         # addr is the target address
         self.addr = addr
         self.destIP, self.destPort = addr
@@ -13,6 +13,7 @@ class serverConn:
         self.state = RecvStates.LISTEN
         self.seqNum = 0
         self.clientSeq = 0
+        self.app = app
         self.messages = msgPool()
         self.recvWin = rcvBuffer()
         self.sendWin = sndBuffer()
@@ -55,7 +56,7 @@ class serverConn:
         for data in datalist:
             self.send_msg(data)
         if self.sendWin.adding == False:
-            self.conn.app.notify_next_move((self.destIP, self.destPort))
+            self.app.notify_next_move((self.destIP, self.destPort))
 
     def update_state(self, newState):
         logger.debug("State: %s->%s" % (self.state, newState))
@@ -76,7 +77,7 @@ class serverConn:
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, bytearray())
         logger.debug("Server Second handshake sent, seq: " + str(self.seqNum))
-        syn_msg = message(headerData, self.conn)
+        syn_msg = message(headerData, self.conn, self.sendWin)
         syn_msg.send_with_timer(self.addr)
         self.update_state(RecvStates.SYN_REVD)
         self.seqNum += 1
@@ -98,7 +99,7 @@ class serverConn:
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, bytearray())
         logger.debug("Server FIN message sent, seq: " + str(self.seqNum))
-        fin_msg = message(headerData, self.conn)
+        fin_msg = message(headerData, self.conn, self.sendWin)
         fin_msg.send_with_timer(self.addr)
         self.update_state(RecvStates.LAST_ACK)
         self.seqNum += 1
@@ -112,17 +113,19 @@ class serverConn:
             return
         if headerDict[Sec.ACK]:
             mess = self.messages.get_mess(headerDict[Sec.ackNum])
-            self.messages.ack_to_num(headerDict[Sec.ackNum])
-            if self.state == RecvStates.SYN_REVD:
-                self.update_state(RecvStates.ESTABLISHED)
-            else:
-                self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
-                if headerDict[Sec.recvWin] > 0:
-                    if headerDict[Sec.ackNum] > 0:
-                        self.sendWin.ack(mess)
-                        self.check_cong_and_send()
-                    else:
-                        self.check_cong_and_send()
+            if mess is not None:
+                logger.debug('Received ack message with ackNum=%d' % headerDict[Sec.ackNum])
+                self.messages.ack_to_num(headerDict[Sec.ackNum])
+                if self.state == RecvStates.SYN_REVD:
+                    self.update_state(RecvStates.ESTABLISHED)
+                else:
+                    self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
+                    if headerDict[Sec.recvWin] > 0:
+                        if headerDict[Sec.ackNum] > 0:
+                            self.sendWin.ack(mess)
+                            self.check_cong_and_send()
+                        else:
+                            self.check_cong_and_send()
         else:
             if len(data) - defaultHeaderLen != PACKET_SIZE:
                 logger.debug('Received data with invalid length, discarded')
@@ -131,12 +134,12 @@ class serverConn:
             if headerDict[Sec.seqNum] == self.clientSeq:
                 if self.recvWin.get_win() > 0:
                     logger.debug('add data with seq %d to receiving window' % headerDict[Sec.seqNum])
-                    flag = self.recvWin.add(data[defaultHeaderLen+1:])
+                    flag = self.recvWin.add(data[defaultHeaderLen:])
                     if flag:
                         self.clientSeq += PACKET_SIZE
                         self.ack_message()
                         data = self.recvWin.peek()
-                        self.conn.app.notify_process_data((self.destIP, self.destPort))
+                        self.app.notify_process_data((self.destIP, self.destPort))
 
                 if self.recvWin.get_win() == 0:
                     logger.debug('rcvWindow full')
@@ -154,7 +157,7 @@ class serverConn:
                     win_msg = message(headerData, self.conn)
                     win_msg.send((self.destIP, self.destPort))
             else:
-                logger.debug('Discarded packet %d not arrived in order' % headerDict[Sec.seqNum])
+                logger.debug('Discarded packet %d not arrived in order, Expecting: %d' % (headerDict[Sec.seqNum], self.clientSeq))
         if headerDict[Sec.FIN] and self.state == RecvStates.ESTABLISHED:
             self.update_state(RecvStates.CLOSE_WAIT)
             # Client closing connection
@@ -176,7 +179,7 @@ class serverConn:
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, data)
         logger.debug("data message sent, seq: " + str(self.seqNum))
-        data_msg = message(headerData + data, self.conn)
+        data_msg = message(headerData + data, self.conn, self.sendWin)
         data_msg.send_with_timer(self.addr)
         self.seqNum += len(data)
         self.messages.add_msg(data_msg, self.seqNum)
@@ -213,22 +216,21 @@ class rUDPServer:
         # a tuple of clients' address and port
         self.connections = {}
         self.app = app
-        listener = threading.Thread(target=self.recv_msg)
-        listener.start()
+        self.listener = threading.Thread(target=self.recv_msg, daemon=True)
+        self.listener.start()
         # Infinite listen loop
-        listener.join()
 
     def recv_msg(self):
         while True:
             data, addr = self.conn.socket.recvfrom(2048)
-            recv_thread = threading.Thread(target=self.process_recv_msg, args=[data, addr])
+            recv_thread = threading.Thread(target=self.process_recv_msg, args=[data, addr], daemon=True)
             recv_thread.start()
 
     def process_recv_msg(self, data, addr):
         headerDict = header_to_dict(data)
         if headerDict[Sec.SYN] and not headerDict[Sec.ACK]:
             # First handshake
-            self.connections[addr] = serverConn(addr, self.conn)
+            self.connections[addr] = serverConn(addr, self.conn, self.app)
             self.connections[addr].clientSeq = headerDict[Sec.seqNum]
             self.connections[addr].handshake()
         else:
