@@ -55,8 +55,7 @@ class serverConn:
         for data in datalist:
             self.send_msg(data)
         if self.sendWin.adding == False:
-            #TODO: notify app to add
-            pass
+            self.conn.app.notify_next_move((self.destIP, self.destPort))
 
     def update_state(self, newState):
         logger.debug("State: %s->%s" % (self.state, newState))
@@ -137,7 +136,7 @@ class serverConn:
                         self.clientSeq += PACKET_SIZE
                         self.ack_message()
                         data = self.recvWin.peek()
-                        # notify app to upload data
+                        self.conn.app.notify_process_data((self.destIP, self.destPort))
 
                 if self.recvWin.get_win() == 0:
                     logger.debug('rcvWindow full')
@@ -160,6 +159,8 @@ class serverConn:
             self.update_state(RecvStates.CLOSE_WAIT)
             # Client closing connection
             self.response_FIN()
+            self.removeSelf()
+            self.notify_close((self.destIP, self.destPort))
 
     def send_msg(self, data):
         headerDict = defaultHeaderDict.copy()

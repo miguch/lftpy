@@ -90,6 +90,9 @@ class client(app):
                 if self.action == operations.SEND:
                     while True:
                         data = self.file.read(1020)
+                        print('\Uploaded %.2f%%.' % float(self.file.tell()) * 100 / self.fileSize, end='')
+                        if self.file.tell() == self.fileSize:
+                            print('\rFile upload completed')
                         if len(data) == 0:
                             break
                         else:
