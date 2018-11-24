@@ -6,7 +6,7 @@ class app:
         pass
 
 
-    def notify(self, user=None):
+    def notify_process_data(self, user=None):
         t = threading.Thread(target=self.process_data, args=[user])
         t.start()
 
@@ -23,6 +23,9 @@ class app:
         pass
 
     @abstractmethod
-    def notify_remove_user(self, user):
+    def remove_user(self, user):
         pass
 
+    @abstractmethod
+    def notify_close(self, user):
+        pass

@@ -4,8 +4,6 @@ from .connection import rUDPConnection, message
 from .utilities import *
 from .lftplog import logger
 
-
-
 class serverConn:
     def __init__(self, addr, conn):
         # addr is the target address
@@ -208,7 +206,7 @@ class serverConn:
 
 
 class rUDPServer:
-    def __init__(self, ip, port, app: app):
+    def __init__(self, ip, port, app):
         self.conn = rUDPConnection(ip, port)
         # The server will identify each connection with
         # a tuple of clients' address and port

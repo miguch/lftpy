@@ -7,7 +7,7 @@ should indicate the actual length of the packet, the rest of the packet should b
 create a client-server application connection
 
 2. client->server: `lLIST`
-server will returns the list of files on server as a JSON formatted string
+server will returns the list of files on server as a JSON formatted array string
 
 3. client->server: `lGET filename`
 request a file from server
@@ -24,12 +24,9 @@ returns when file said to be sent from client is already existed in the server.
 7. server->client: `WAITING filename`
 returns when the server is ready to receive the file
 
-8. server->client: `SENDING filename`
-returns when the server is ready to send the file to client
-
 9. client<->server: `SIZE filesize`
 Send this command before sending file, indicating the size of the file.
 
-10. client<->server: `DONE`
-Returns this command when a file has been completely sent.
+10. client->server: `DONE`
+The server will send this command when an action has been completed.
 

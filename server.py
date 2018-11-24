@@ -9,8 +9,7 @@ class serverSession:
         self.destIP = destIP
         self.destPort = destPort
 
-    def process_data(self, user):
-        pass
+        
 
     
 
@@ -35,8 +34,9 @@ class server(app):
 
 def main():
     parser = argparse.ArgumentParser(description='The server program of LFTP')
-    parser.add_argument('-p', '--port', type=int, default=9999)
-    parser.add_argument('-a', '--addr', default='0.0.0.0')
+    parser.add_argument('-p', '--port', type=int, default=9999, help='The port to listen on')
+    parser.add_argument('-a', '--addr', default='0.0.0.0', help='The ip address to listen on')
+    parser.add_argument('-d', '--datadir', default='data', help='The data directory of the server')
     args = parser.parse_args()
     if not re.match('^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?))$', args.addr):
         print('The ip address is invalid!')

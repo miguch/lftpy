@@ -104,7 +104,6 @@ def fill_checksum(header: bytearray, data: bytearray):
         val = ~int.from_bytes(header[i:i+2], byteorder='big', signed=False) & 0x0000ffff
         checksum = (val + checksum)
         checksum = (((checksum & 0xffff0000) >> 16) + (checksum & 0x0000ffff))
-        print(checksum)
     for i in range(0, len(data), 2):
         val = ~int.from_bytes(data[i:i+2], byteorder='big', signed=False) & 0x0000ffff
         checksum = (val + checksum)

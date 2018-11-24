@@ -6,8 +6,8 @@ import random
 
 
 class rUDPClient:
-    def __init__(self, ip, app):
-        self.conn = rUDPConnection(ip, 0)
+    def __init__(self, app):
+        self.conn = rUDPConnection("0.0.0.0", 0)
         self.ip = self.conn.ip
         self.port = self.conn.port
         self.state = SendStates.CLOSED
@@ -20,6 +20,7 @@ class rUDPClient:
         self.recvWin = rcvBuffer()
         self.sendWin = sndBuffer()
         self.app = app
+        self.finished = False;
 
     def consume_rcv_buffer(self):
         if self.recvWin.get_win() == 0:
@@ -57,9 +58,8 @@ class rUDPClient:
         datalist = self.sendWin.get_data()
         for data in datalist:
             self.send_msg(data)
-        if self.sendWin.adding == False:
-            #TODO: notify app to add
-            pass
+        if self.sendWin.adding is False:
+            self.app.notify_next_move()
 
 
     def update_state(self, newState):
@@ -236,6 +236,7 @@ class rUDPClient:
         syn_msg.send((self.destIP, self.destPort))
         self.update_state(SendStates.TIME_WAIT)
         close_thread = threading.Timer(30, self.close)
+        self.app.notify_close()
         close_thread.start()
 
     def process_msg(self, data):
@@ -271,7 +272,7 @@ class rUDPClient:
                         self.serverSeq += PACKET_SIZE
                         self.ack_msg()
                         data = self.recvWin.peek()
-                        # notify app to upload data
+                        self.app.notify_process_data()
                 if self.recvWin.get_win() == 0:
                     logger.debug('rcvWindow full')
                     headerDict = defaultHeaderDict.copy()
@@ -309,7 +310,7 @@ class rUDPClient:
     
     # Start a thread for this function after establishing connection 
     def listen_msg(self):
-        while True:
+        while not self.finished:
             data, addr = self.conn.socket.recvfrom(2048)
             if addr != (self.destIP, self.destPort):
                 logger.debug('Received message from unexpected sender')
