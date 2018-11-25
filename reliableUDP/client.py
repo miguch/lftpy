@@ -57,6 +57,8 @@ class rUDPClient:
         
     def check_cong_and_send(self):
         datalist = self.sendWin.get_data()
+        if not datalist:
+            return
         for data in datalist:
             self.send_msg(data)
         if self.sendWin.adding is False:
@@ -154,7 +156,7 @@ class rUDPClient:
             Sec.SYN: 0,
             Sec.ACK: 0,
             Sec.FIN: 0,
-            Sec.recvWin: self.sendWin.get_win()
+            Sec.recvWin: self.recvWin.get_win()
         })
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, data)
@@ -163,7 +165,8 @@ class rUDPClient:
         data_msg.send_with_timer((self.destIP, self.destPort))
         self.seqNum += len(data)
         self.messages.add_msg(data_msg, self.seqNum)
-        self.sendWin.send(data_msg)
+        if self.sendWin.state != CwndState.SHAKING:
+            self.sendWin.send(data_msg)
 
 
     # initiate Client's first wavehand, fourth wavehand is triggered when the second 
@@ -171,6 +174,7 @@ class rUDPClient:
     def finish_conn(self):
         logger.debug('Closing connection.')
         self.first_wavehand()
+        self.app.notify_close()
 
 
     def first_wavehand(self):
@@ -243,7 +247,6 @@ class rUDPClient:
         syn_msg.send((self.destIP, self.destPort))
         self.update_state(SendStates.TIME_WAIT)
         close_thread = threading.Timer(30, self.close)
-        self.app.notify_close()
         close_thread.start()
 
     def process_msg(self, data):
@@ -261,13 +264,14 @@ class rUDPClient:
                 elif self.state == SendStates.FIN_WAIT_2 and headerDict[Sec.FIN]:
                     self.third_wavehand()
                 else:
-                    self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
-                    if headerDict[Sec.recvWin] > 0:
-                        if headerDict[Sec.ackNum] > 0:
-                            self.sendWin.ack(mess)
-                            self.check_cong_and_send()
-                        else:
-                            self.check_cong_and_send()
+                    if self.sendWin.state != CwndState.SHAKING:
+                        self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
+                        if headerDict[Sec.recvWin] > 0:
+                            if headerDict[Sec.ackNum] > 0:
+                                self.sendWin.ack(mess)
+                                self.check_cong_and_send()
+                            else:
+                                self.check_cong_and_send()
         else:
             if len(data) - defaultHeaderLen != PACKET_SIZE:
                 logger.debug('Received data with invalid length, discarded')
@@ -288,6 +292,7 @@ class rUDPClient:
                     headerDict.update({
                         Sec.sPort: self.port,
                         Sec.dPort: self.destPort,
+                        Sec.secNum: self.seqNum,
                         Sec.ackNum: 0,
                         Sec.ACK: 1,
                         Sec.SYN: 0,
@@ -297,6 +302,8 @@ class rUDPClient:
                     fill_checksum(headerData, bytearray())
                     win_msg = message(headerData, self.conn)
                     win_msg.send((self.destIP, self.destPort))
+            elif headerDict[Sec.seqNum] <= self.serverSeq:
+                self.ack_msg()
             else:
                 logger.debug('Discarded packet %d not arrived in order, Expecting: %d' % (headerDict[Sec.seqNum], self.serverSeq))
 
@@ -309,7 +316,8 @@ class rUDPClient:
             Sec.ackNum: self.serverSeq,
             Sec.SYN: 0,
             Sec.ACK: 1,
-            Sec.FIN: 0
+            Sec.FIN: 0,
+            Sec.recvWin: self.recvWin.get_win()
         })
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, bytearray())

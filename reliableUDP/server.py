@@ -44,7 +44,7 @@ class serverConn:
         full = self.sendWin.add(data)
         if full:
             return False    #sending buffer cannot add for now
-        if self.sendWin.get_cwnd():  #first file trunk
+        if self.sendWin.get_cwnd() == 0:  #first file trunk
             self.sendWin.set_cwnd(1)
             self.sendWin.set_win(1)
             self.sendWin.ssthresh = 16
@@ -54,9 +54,11 @@ class serverConn:
 
     def check_cong_and_send(self):
         datalist = self.sendWin.get_data()
+        if not datalist:
+            return
         for data in datalist:
             self.send_msg(data)
-        if self.sendWin.adding == False:
+        if self.sendWin.adding is False:
             self.app.notify_next_move((self.destIP, self.destPort))
 
     def update_state(self, newState):
@@ -101,7 +103,7 @@ class serverConn:
         fill_checksum(headerData, bytearray())
         logger.debug("Server FIN message sent, seq: " + str(self.seqNum))
         fin_msg = message(headerData, self.conn, self.sendWin)
-        fin_msg.send_with_timer(self.addr)
+        fin_msg.send(self.addr)
         self.update_state(RecvStates.LAST_ACK)
         self.seqNum += 1
         self.clientSeq += 1
@@ -120,13 +122,14 @@ class serverConn:
                 if self.state == RecvStates.SYN_REVD:
                     self.update_state(RecvStates.ESTABLISHED)
                 else:
-                    self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
-                    if headerDict[Sec.recvWin] > 0:
-                        if headerDict[Sec.ackNum] > 0:
-                            self.sendWin.ack(mess)
-                            self.check_cong_and_send()
-                        else:
-                            self.check_cong_and_send()
+                    if self.sendWin.state != CwndState.SHAKING:
+                        self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
+                        if headerDict[Sec.recvWin] > 0:
+                            if headerDict[Sec.ackNum] > 0:
+                                self.sendWin.ack(mess)
+                                self.check_cong_and_send()
+                            else:
+                                self.check_cong_and_send()
         else:
             if len(data) - defaultHeaderLen != PACKET_SIZE:
                 logger.debug('Received data with invalid length, discarded')
@@ -148,6 +151,7 @@ class serverConn:
                     headerDict.update({
                         Sec.sPort: self.conn.port,
                         Sec.dPort: self.destPort,
+                        Sec.seqNum: self.seqNum,
                         Sec.ackNum: 0,
                         Sec.ACK: 1,
                         Sec.SYN: 0,
@@ -175,7 +179,8 @@ class serverConn:
             Sec.ackNum: self.clientSeq,
             Sec.SYN: 0,
             Sec.ACK: 0,
-            Sec.FIN: 0
+            Sec.FIN: 0,
+            Sec.recvWin: self.recvWin.get_win()
         })
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, data)
@@ -184,7 +189,8 @@ class serverConn:
         data_msg.send_with_timer(self.addr)
         self.seqNum += len(data)
         self.messages.add_msg(data_msg, self.seqNum)
-        self.sendWin.send(data_msg)
+        if self.sendWin.state != CwndState.SHAKING:
+            self.sendWin.send(data_msg)
 
 
     # Send the ack message to client
@@ -197,7 +203,8 @@ class serverConn:
             Sec.ackNum: self.clientSeq,
             Sec.SYN: 0,
             Sec.ACK: 1,
-            Sec.FIN: 1
+            Sec.FIN: 1,
+            Sec.recvWin: self.recvWin.get_win()
         })
         headerData = dict_to_header(headerDict)
         fill_checksum(headerData, bytearray())

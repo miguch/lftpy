@@ -147,7 +147,7 @@ class client(app):
                         print('Receiving the file now ..., size: %d' % self.fileSize)
                         self.update_state(clientStates.DATA)
             elif self.state == clientStates.DATA:
-                if (self.file is None or self.file.tell() == self.fileSize) and content.decode() == 'DONE':
+                if content.decode() == 'DONE' and (self.file is None or self.file.tell() == self.fileSize):
                     self.rudp.finish_conn()
                 elif self.action == operations.GET:
                     self.file.write(content)

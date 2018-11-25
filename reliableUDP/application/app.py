@@ -27,5 +27,5 @@ class app:
         pass
 
     @abstractmethod
-    def notify_close(self, user):
+    def notify_close(self):
         pass

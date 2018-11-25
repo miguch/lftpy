@@ -14,8 +14,8 @@ operations = Enum('operations', ('GET', 'SEND', 'LIST'))
 
 
 commands = {
-    b'lSEND': operations.GET,
-    b'lGET': operations.SEND,
+    b'lSEND': operations.SEND,
+    b'lGET': operations.GET,
     b'lLIST': operations.LIST
 }
 
@@ -59,7 +59,7 @@ class serverSession:
         if self.state == serverStates.DATA:
             if len(self.waitingList) != 0:
                 while len(self.waitingList) != 0:
-                    if self.rudp.append_snd_buffer(self.waitingList[0]):
+                    if self.conn.append_snd_buffer(self.waitingList[0]):
                         self.waitingList.pop(0)
                     else:
                         return
@@ -67,7 +67,7 @@ class serverSession:
                 while True:
                     data = self.file.read(1020)
                     if len(data) == 0:
-                        self.send_data(b'DONE', False)
+                        self.send_data(b'DONE', True)
                         break
                     else:
                         # Pause when we cannot add new data to send
@@ -78,16 +78,16 @@ class serverSession:
         if self.action == operations.GET:
             # getting file from client
             try:
-                self.file = open(os.path.join(self.dir, self.filename), 'rb')
+                logger.info('Client %s:%d requested file %s' % (self.destIP, self.destPort, self.filename))
+                self.file = open(os.path.join(self.dir, self.filename.decode()), 'rb')
                 self.file.seek(0, os.SEEK_END)
                 self.fileSize = self.file.tell()
                 self.file.seek(0, os.SEEK_SET)
-                self.send_data(b'SIZE ' + int.to_bytes(self.fileSize, byteorder='little', length=4))
-                self.send_file()
+                self.send_data(b'SIZE ' + int.to_bytes(self.fileSize, byteorder='little', length=4), False)
                 self.update_state(serverStates.DATA)
+                self.next()
             except FileNotFoundError as e:
-                self.send_data(b'NOTEXIST %s' % self.filename)
-                self.send_data(b'DONE')
+                self.send_data(b'NOTEXIST %s' % self.filename, False)
         elif self.action == operations.LIST:
             fileList = os.listdir(self.dir)
             response = bytearray(json.dumps(fileList), encoding='utf-8')
@@ -95,11 +95,12 @@ class serverSession:
             self.send_data(b'DONE', False)
         elif self.action == operations.SEND:
             # Sending file to client
-            checker = Path(os.path.join(self.dir, self.filename))
+            checker = Path(os.path.join(self.dir, self.filename.decode()))
             if checker.exists():
                 self.send_data(b'EXISTED %s' % self.filename, False)
-                self.send_data(b'DONE', False)
-            self.file = open(os.path.join(self.dir, self.filename), 'wb')
+                return
+            logger.info('User %s:%d request to upload file %s' % (self.destIP, self.destPort, self.filename))
+            self.file = open(os.path.join(self.dir, self.filename.decode()), 'wb')
             self.update_state(serverStates.WAIT_SIZE)
             self.send_data(b'WAITING %s' % self.filename, False)
 
@@ -149,7 +150,7 @@ class server(app):
                     action = commands[req[0]]
                     self.sessions[user] = serverSession(user[0], user[1], action, self.dir, self.rudp.connections[user])
                     if len(req) > 1:
-                        self.sessions[user].filename = req[1]
+                        self.sessions[user].filename = content[len(req[0])+1:]
                     self.sessions[user].response_req()
             else:
                 self.sessions[user].process_data(content)

@@ -175,7 +175,7 @@ class rcvBuffer:
             self.lock.release()    
 
     def get_win(self):
-        return MAX_BUFFER_SIZE - self.length
+        return (MAX_BUFFER_SIZE - self.length) // PACKET_SIZE
 
 
     def peek(self):
@@ -222,6 +222,8 @@ class sndBuffer:
     def get_data(self):
         datalist = []
         i = self.lastByteSent
+        if i == self.lastByteReady:
+            return []
         count = 0
         while count < self.win:
             datalist.append(self.buffer[i:i+PACKET_SIZE])
@@ -277,9 +279,14 @@ class sndBuffer:
                     self.lastByteAcked = 0
                 self.length -= PACKET_SIZE
             else:
-                if self.messages[self.lastByteSent-1].is_acked():
+                last = 0
+                if self.lastByteSent == 0:
+                    last = MAX_BUFFER_SIZE - PACKET_SIZE
+                else:
+                    last = self.lastByteSent - PACKET_SIZE
+                if self.messages[last].is_acked():
                     self.cwnd += 1
-                    self.lastByteAcked = self.lastByteSent - 1
+                    self.lastByteAcked = last
         finally:
             self.lock.release()
 
