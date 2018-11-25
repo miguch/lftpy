@@ -353,10 +353,9 @@ class message:
         return self.acked
 
     def send_with_timer(self, destAddr):
-        if self.timeoutTime > 8:
+        if self.timeoutCount == 3:
             logger.warning('Timeout %d exceeds 3 times' % self.seqNum)
-            self.timeoutTime = 1
-        if self.timeoutTime == 20:
+        if self.timeoutCount == 20:
             logger.error('Too many timeout, dropping packet %d' % self.seqNum)
         if not self.acked:
             if self.timeoutTime != 1:

@@ -64,10 +64,11 @@ class serverSession:
                     else:
                         return
             if self.action == operations.GET:
-                while True:
+                while True and not self.file.closed:
                     data = self.file.read(1020)
                     if len(data) == 0:
                         self.send_data(b'DONE', True)
+                        self.file.close()
                         break
                     else:
                         # Pause when we cannot add new data to send
@@ -117,6 +118,7 @@ class serverSession:
                     self.file.write(data)
                     if self.file.tell() == self.fileSize:
                         self.send_data(b'DONE', False)
+                        self.file.close()
                 finally:
                     self.lock.release()
             

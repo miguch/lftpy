@@ -143,8 +143,7 @@ class serverConn:
                     if flag:
                         self.clientSeq += PACKET_SIZE
                         self.ack_message()
-                        data = self.recvWin.peek()
-                        self.app.notify_process_data((self.destIP, self.destPort))
+                    self.app.notify_process_data((self.destIP, self.destPort))
 
                 if self.recvWin.get_win() == 0:
                     logger.debug('rcvWindow full')

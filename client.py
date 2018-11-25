@@ -92,7 +92,7 @@ class client(app):
                         else:
                             return
                 if self.action == operations.SEND:
-                    while True:
+                    while True and not self.file.closed:
                         data = self.file.read(1020)
                         print('\rUploaded %.2f%%.' % (float(self.file.tell()) * 100 / self.fileSize), end='')
                         if self.file.tell() == self.fileSize:
@@ -138,7 +138,6 @@ class client(app):
                     print()
                     self.update_state(clientStates.DATA)
                 elif self.action == operations.GET:
-                    print(content)
                     [cmd, arg] = content.split(b' ')
                     if cmd.decode() == 'NOTEXIST' and content[len(cmd)+1:].decode() == self.filename:
                         print('Requested file does not exist on the server!')
@@ -149,7 +148,7 @@ class client(app):
                         print('Receiving the file now ..., size: %d' % self.fileSize)
                         self.update_state(clientStates.DATA)
             elif self.state == clientStates.DATA:
-                if (self.file is None or self.file.tell() == self.fileSize) and content.decode() == 'DONE':
+                if (self.file is None or self.file.closed or self.file.tell() == self.fileSize) and content.decode() == 'DONE':
                     self.rudp.finish_conn()
                 elif self.action == operations.GET:
                     self.file.write(content)

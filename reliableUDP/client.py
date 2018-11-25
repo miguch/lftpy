@@ -273,6 +273,7 @@ class rUDPClient:
                                 self.check_cong_and_send()
                             else:
                                 self.check_cong_and_send()
+                    self.app.notify_next_move()
         else:
             if len(data) - defaultHeaderLen != PACKET_SIZE:
                 logger.debug('Received data with invalid length, discarded')
@@ -285,15 +286,14 @@ class rUDPClient:
                     if flag:
                         self.serverSeq += PACKET_SIZE
                         self.ack_msg()
-                        data = self.recvWin.peek()
-                        self.app.notify_process_data()
+                    self.app.notify_process_data()
                 if self.recvWin.get_win() == 0:
                     logger.debug('rcvWindow full')
                     headerDict = defaultHeaderDict.copy()
                     headerDict.update({
                         Sec.sPort: self.port,
                         Sec.dPort: self.destPort,
-                        Sec.secNum: self.seqNum,
+                        Sec.seqNum: self.seqNum,
                         Sec.ackNum: 0,
                         Sec.ACK: 1,
                         Sec.SYN: 0,
