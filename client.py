@@ -108,6 +108,7 @@ class client(app):
 
 
     def process_data(self, user=None):
+        goNext = False
         try:
             self.lock.acquire()
             data = self.rudp.consume_rcv_buffer()
@@ -116,10 +117,10 @@ class client(app):
             if self.state == clientStates.SENDREQUEST:
                 if self.action == operations.SEND:
                     [cmd, arg] = content.split(b' ')
-                    if cmd == 'EXISTED' and content[len(cmd)+1:] == self.filename:
+                    if cmd == b'EXISTED' and content[len(cmd)+1:].decode() == self.filename:
                         print('File already existed on the server!')
                         self.rudp.finish_conn()
-                    elif cmd == 'WAITING' and content[len(cmd)+1:] == self.filename:
+                    elif cmd == b'WAITING' and content[len(cmd)+1:].decode() == self.filename:
                         print('Sending the file now...')
                         self.update_state(clientStates.DATA)
                         logger.info('server waiting for file')
@@ -128,7 +129,8 @@ class client(app):
                         self.file.seek(0, os.SEEK_END)
                         self.fileSize = self.file.tell()
                         self.file.seek(begin_pos, os.SEEK_SET)
-                        self.send_data(b'SIZE ' + int.to_bytes(self.fileSize, byteorder='little'), False)
+                        self.send_data(b'SIZE ' + int.to_bytes(self.fileSize, byteorder='little', length=4), False)
+                        goNext = True
                 elif self.action == operations.LIST:
                     files = json.loads(content.decode())
                     for name in files:
@@ -138,7 +140,7 @@ class client(app):
                 elif self.action == operations.GET:
                     print(content)
                     [cmd, arg] = content.split(b' ')
-                    if cmd.decode() == 'NOTEXIST' and content[len(cmd)+1:] == self.filename:
+                    if cmd.decode() == 'NOTEXIST' and content[len(cmd)+1:].decode() == self.filename:
                         print('Requested file does not exist on the server!')
                         self.rudp.finish_conn()
                     elif cmd.decode() == 'SIZE':
@@ -156,6 +158,8 @@ class client(app):
                         print('\rFile downloade completed')
         finally:
             self.lock.release()
+            if goNext:
+                self.next()
 
     def notify_close(self):
         self.close()

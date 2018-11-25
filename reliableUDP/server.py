@@ -28,6 +28,7 @@ class serverConn:
                 Sec.sPort: self.conn.port,
                 Sec.dPort: self.destPort,
                 Sec.ackNum: 0,
+                Sec.seqNum: self.seqNum,
                 Sec.ACK: 1,
                 Sec.SYN: 0,
                 Sec.recvWin: 1
@@ -47,7 +48,7 @@ class serverConn:
         if self.sendWin.get_cwnd() == 0:  #first file trunk
             self.sendWin.set_cwnd(1)
             self.sendWin.set_win(1)
-            self.sendWin.ssthresh = 16
+            self.sendWin.ssthresh = 8
             self.sendWin.state = CwndState.SLOWSTART
             self.check_cong_and_send()
         return True
@@ -161,6 +162,8 @@ class serverConn:
                     fill_checksum(headerData, bytearray())
                     win_msg = message(headerData, self.conn)
                     win_msg.send((self.destIP, self.destPort))
+            elif headerDict[Sec.seqNum] <= self.clientSeq:
+                self.ack_message()
             else:
                 logger.debug('Discarded packet %d not arrived in order, Expecting: %d' % (headerDict[Sec.seqNum], self.clientSeq))
         if headerDict[Sec.FIN] and self.state == RecvStates.ESTABLISHED:

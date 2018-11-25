@@ -31,6 +31,7 @@ class rUDPClient:
                 Sec.sPort: self.port,
                 Sec.dPort: self.destPort,
                 Sec.ackNum: 0,
+                Sec.seqNum: self.seqNum,
                 Sec.ACK: 1,
                 Sec.SYN: 0,
                 Sec.recvWin: 1
@@ -50,7 +51,7 @@ class rUDPClient:
         if self.sendWin.get_cwnd() == 0:  # first file trunk
             self.sendWin.set_cwnd(1)
             self.sendWin.set_win(1)
-            self.sendWin.ssthresh = 16
+            self.sendWin.ssthresh = 8
             self.sendWin.state = CwndState.SLOWSTART
             self.check_cong_and_send()
         return True

@@ -145,7 +145,7 @@ def get_ack_num(header: bytearray):
 
 
 
-MAX_BUFFER_SIZE = 524288
+MAX_BUFFER_SIZE = 16384
 # Each data packet should be of size 1k
 PACKET_SIZE = 1024
 
@@ -247,6 +247,8 @@ class sndBuffer:
     def set_win(self, win):
         self.lock.acquire()
         try:
+            if win > 16:
+                win = 16
             self.win = win
         finally:
             self.lock.release()
@@ -270,11 +272,12 @@ class sndBuffer:
         self.lock.acquire()
         try:
             if self.state == CwndState.SLOWSTART:
-                if self.messages[self.lastByteAcked].is_acked():
-                    self.cwnd += 1
-                    if self.cwnd == self.ssthresh:
-                        self.state = CwndState.CONGAVOID
-                    self.lastByteAcked += PACKET_SIZE
+                if self.lastByteAcked in self.messages:
+                    if self.messages[self.lastByteAcked].is_acked():
+                        self.cwnd += 1
+                        if self.cwnd == self.ssthresh:
+                            self.state = CwndState.CONGAVOID
+                        self.lastByteAcked += PACKET_SIZE
                 if self.lastByteAcked == MAX_BUFFER_SIZE:
                     self.lastByteAcked = 0
                 self.length -= PACKET_SIZE
@@ -301,7 +304,39 @@ class sndBuffer:
             self.lock.release()
 
 
+MAX_TIMER_COUNT = 32
 
+# timer pool is used to control the amount of timer
+# concurrency in order to prevent high context switch overhead
+class timerPool:
+    def __init__(self):
+        self.waiting_timers = []
+        self.timer_count = 0
+        self.lock = threading.Lock()
+
+    def add_timer(self, t):
+        try:
+            self.lock.acquire()
+            self.timer_count += 1
+            if self.timer_count < MAX_TIMER_COUNT:
+                t.start()
+            else:
+                self.waiting_timers.append(t)
+        finally:
+            self.lock.release()
+
+    def finish_timer(self):
+        try:
+            self.lock.acquire()
+            self.timer_count -= 1
+            if self.waiting_timers:
+                self.waiting_timers[0].start()
+                self.waiting_timers.pop(0)
+        finally:
+            self.lock.release()
+
+
+tPool = timerPool()
 
 class message:
     def __init__(self, data, conn: rUDPConnection, sendBuf: sndBuffer=None):
@@ -312,6 +347,7 @@ class message:
         self.sendBuf = sendBuf
         # initial time out is 1000 ms
         self.timeoutTime = 1
+        self.timeoutCount = 0
 
     def is_acked(self):
         return self.acked
@@ -320,6 +356,8 @@ class message:
         if self.timeoutTime > 8:
             logger.warning('Timeout %d exceeds 3 times' % self.seqNum)
             self.timeoutTime = 1
+        if self.timeoutTime == 20:
+            logger.error('Too many timeout, dropping packet %d' % self.seqNum)
         if not self.acked:
             if self.timeoutTime != 1:
                 logger.debug('Resending message with seqNum=%d' % self.seqNum)
@@ -327,9 +365,11 @@ class message:
             self.send(destAddr)
             t = threading.Timer(self.timeoutTime, self.send_with_timer, args=[destAddr])
             self.timeoutTime *= 2
-            t.start()
+            self.timeoutCount += 1
+            tPool.add_timer(t)
         else:
             logger.debug('Message with seqNum=%d finished' % self.seqNum)
+            tPool.finish_timer()
 
 
     def send(self, destAddr):
@@ -338,10 +378,12 @@ class message:
 
 
 
+
 class msgPool:
     def __init__(self):
         self.messages = {}
         self.lock = threading.Lock()
+
 
     def add_msg(self, msg: message, expectACK):
         try:
