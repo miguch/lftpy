@@ -364,7 +364,6 @@ class message:
             self.sendBuf.find_cong()
             self.send(destAddr)
             t = threading.Timer(self.timeoutTime, self.send_with_timer, args=[destAddr])
-            self.timeoutTime *= 2
             self.timeoutCount += 1
             tPool.add_timer(t)
         else:
