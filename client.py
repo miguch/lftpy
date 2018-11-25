@@ -151,7 +151,7 @@ class client(app):
                     self.rudp.finish_conn()
                 elif self.action == operations.GET:
                     self.file.write(content)
-                    print('\rDownloaded %.2f%%.' % ((float(self.file.tell()) * 100) / self.fileSize), end='')
+                    print('\rDownloaded %.5f%%.' % ((float(self.file.tell()) * 100) / self.fileSize), end='')
                     if self.file.tell() == self.fileSize:
                         print('\rFile download completed', end='')
         finally:
