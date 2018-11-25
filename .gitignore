@@ -6,3 +6,5 @@ lftpy.iml
 .vscode
 .sonarlint
 cecs572.pdf
+log/cecs572.pdf log/client.py log/lftp.log log/test.pdf
+log

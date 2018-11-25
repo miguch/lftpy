@@ -47,6 +47,7 @@ class client(app):
         self.rudp.finished = True
         if self.file:
             self.file.close()
+        print()
         sys.exit()
 
     def update_state(self, newState):
@@ -96,7 +97,7 @@ class client(app):
                         data = self.file.read(1020)
                         print('\rUploaded %.2f%%.' % (float(self.file.tell()) * 100 / self.fileSize), end='')
                         if self.file.tell() == self.fileSize:
-                            print('\rFile upload completed')
+                            print('\rFile upload completed', end='')
                         if len(data) == 0:
                             break
                         else:
@@ -108,7 +109,6 @@ class client(app):
 
 
     def process_data(self, user=None):
-        goNext = False
         try:
             self.lock.acquire()
             data = self.rudp.consume_rcv_buffer()
@@ -130,7 +130,6 @@ class client(app):
                         self.fileSize = self.file.tell()
                         self.file.seek(begin_pos, os.SEEK_SET)
                         self.send_data(b'SIZE ' + int.to_bytes(self.fileSize, byteorder='little', length=4), False)
-                        goNext = True
                 elif self.action == operations.LIST:
                     files = json.loads(content.decode())
                     for name in files:
@@ -154,11 +153,9 @@ class client(app):
                     self.file.write(content)
                     print('\rDownloaded %.2f%%.' % ((float(self.file.tell()) * 100) / self.fileSize), end='')
                     if self.file.tell() == self.fileSize:
-                        print('\rFile downloade completed')
+                        print('\rFile download completed', end='')
         finally:
             self.lock.release()
-            if goNext:
-                self.next()
 
     def notify_close(self):
         self.close()
