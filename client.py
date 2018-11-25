@@ -95,7 +95,7 @@ class client(app):
                 if self.action == operations.SEND:
                     while True and not self.file.closed:
                         data = self.file.read(1020)
-                        print('\rUploaded %.2f%%.' % (float(self.file.tell()) * 100 / self.fileSize), end='')
+                        print('\rUploaded %.5f%%.' % (float(self.file.tell()) * 100 / self.fileSize), end='')
                         if self.file.tell() == self.fileSize:
                             print('\rFile upload completed', end='')
                         if len(data) == 0:
