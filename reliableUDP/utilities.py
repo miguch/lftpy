@@ -275,6 +275,7 @@ class sndBuffer:
     def ack(self, mess):
         self.lock.acquire()
         try:
+            logger.debug('%d %d' % (self.messages[self.lastByteAcked].seqNum, mess.seqNum))
             if self.state == CwndState.SLOWSTART:
                 if self.lastByteAcked in self.messages:
                     if self.messages[self.lastByteAcked].is_acked() is True:
@@ -319,7 +320,7 @@ class message:
         self.conn = conn
         self.sendBuf = sendBuf
         # initial time out is 1000 ms
-        self.timeoutTime = 1
+        self.timeoutTime = 0.8
         self.timeoutCount = 0
 
     def is_acked(self):

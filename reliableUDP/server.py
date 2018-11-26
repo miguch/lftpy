@@ -127,7 +127,7 @@ class serverConn:
                 else:
                     if self.sendWin.state != CwndState.SHAKING:
                         logger.debug('window size: %d' % self.sendWin.get_win())
-                        if headerDict[Sec.recvWin] > 0:
+                        if headerDict[Sec.recvWin] > 0 and self.sendWin.messages[self.sendWin.lastByteAcked].seqNum == mess.seqNum:
                             if headerDict[Sec.ackNum] > 0:
                                 self.sendWin.ack(mess)
                                 self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
