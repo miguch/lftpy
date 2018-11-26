@@ -320,7 +320,7 @@ class message:
         self.conn = conn
         self.sendBuf = sendBuf
         # initial time out is 1000 ms
-        self.timeoutTime = 0.8
+        self.timeoutTime = 1
         self.timeoutCount = 0
 
     def is_acked(self):

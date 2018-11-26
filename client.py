@@ -150,6 +150,8 @@ class client(app):
                 if (self.file is None or self.file.closed or self.file.tell() == self.fileSize) and content.decode() == 'DONE':
                     self.rudp.finish_conn()
                 elif self.action == operations.GET:
+                    if self.file.tell() == self.fileSize:
+                        return
                     self.file.write(content)
                     print('\rDownloaded %.5f%%.' % ((float(self.file.tell()) * 100) / self.fileSize), end='')
                     if self.file.tell() == self.fileSize:

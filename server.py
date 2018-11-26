@@ -115,6 +115,8 @@ class serverSession:
             elif self.state == serverStates.DATA:
                 try:
                     self.lock.acquire()
+                    if self.file.tell() == self.fileSize:
+                        return
                     self.file.write(data)
                     if self.file.tell() == self.fileSize:
                         self.send_data(b'DONE', False)
