@@ -55,12 +55,12 @@ class client(app):
         self.state = newState
 
     def send_data(self, data, useBuffer):
-        buf = bytearray(1024)
+        buf = bytearray(5120)
         length = len(data)
         buf[0:4] = int.to_bytes(length, length=4, byteorder='big')
         buf[4:4+length] = data
-        pad_len = 1024 - 4 - length
-        buf[4+length:1024] = b'\0' * pad_len
+        pad_len = 5120 - 4 - length
+        buf[4+length:5120] = b'\0' * pad_len
         if useBuffer:
             if not self.rudp.append_snd_buffer(buf):
                 self.waitingList.append(buf)
@@ -94,7 +94,7 @@ class client(app):
                             return
                 if self.action == operations.SEND:
                     while True and not self.file.closed:
-                        data = self.file.read(1020)
+                        data = self.file.read(5116)
                         print('\rUploaded %.5f%%.' % (float(self.file.tell()) * 100 / self.fileSize), end='')
                         if self.file.tell() == self.fileSize:
                             print('\rFile upload completed', end='')

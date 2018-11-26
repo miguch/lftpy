@@ -232,7 +232,7 @@ class rUDPServer:
 
     def recv_msg(self):
         while True:
-            data, addr = self.conn.socket.recvfrom(2048)
+            data, addr = self.conn.socket.recvfrom(6144)
             recv_thread = threading.Thread(target=self.process_recv_msg, args=[data, addr], daemon=True)
             recv_thread.start()
 

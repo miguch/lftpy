@@ -331,7 +331,7 @@ class rUDPClient:
         self.conn.socket.settimeout(1)
         while not self.finished:
             try:
-                data, addr = self.conn.socket.recvfrom(2048)
+                data, addr = self.conn.socket.recvfrom(6144)
                 if addr != (self.destIP, self.destPort):
                     logger.debug('Received message from unexpected sender')
                     continue

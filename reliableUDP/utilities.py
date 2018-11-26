@@ -145,9 +145,9 @@ def get_ack_num(header: bytearray):
 
 
 
-MAX_BUFFER_SIZE = 16384
+MAX_BUFFER_SIZE = 25600
 # Each data packet should be of size 1k
-PACKET_SIZE = 1024
+PACKET_SIZE = 5120
 
 # 512kb receive window, store with a array
 class rcvBuffer:
@@ -306,37 +306,6 @@ class sndBuffer:
 
 MAX_TIMER_COUNT = 32
 
-# timer pool is used to control the amount of timer
-# concurrency in order to prevent high context switch overhead
-class timerPool:
-    def __init__(self):
-        self.waiting_timers = []
-        self.timer_count = 0
-        self.lock = threading.Lock()
-
-    def add_timer(self, t):
-        try:
-            self.lock.acquire()
-            self.timer_count += 1
-            if self.timer_count < MAX_TIMER_COUNT:
-                t.start()
-            else:
-                self.waiting_timers.append(t)
-        finally:
-            self.lock.release()
-
-    def finish_timer(self):
-        try:
-            self.lock.acquire()
-            self.timer_count -= 1
-            if self.waiting_timers:
-                self.waiting_timers[0].start()
-                self.waiting_timers.pop(0)
-        finally:
-            self.lock.release()
-
-
-tPool = timerPool()
 
 class message:
     def __init__(self, data, conn: rUDPConnection, sendBuf: sndBuffer=None):
@@ -364,10 +333,9 @@ class message:
             self.send(destAddr)
             t = threading.Timer(self.timeoutTime, self.send_with_timer, args=[destAddr])
             self.timeoutCount += 1
-            tPool.add_timer(t)
+            t.start()
         else:
             logger.debug('Message with seqNum=%d finished' % self.seqNum)
-            tPool.finish_timer()
 
 
     def send(self, destAddr):
