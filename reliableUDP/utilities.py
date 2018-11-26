@@ -145,7 +145,7 @@ def get_ack_num(header: bytearray):
 
 
 
-MAX_BUFFER_SIZE = 25600
+MAX_BUFFER_SIZE = 102400
 # Each data packet should be of size 1k
 PACKET_SIZE = 5120
 
@@ -228,6 +228,10 @@ class sndBuffer:
         while count < self.win:
             datalist.append(self.buffer[i:i+PACKET_SIZE])
             i += PACKET_SIZE
+            if i == MAX_BUFFER_SIZE:
+                i = 0
+            if i == self.lastByteReady:
+                break
             count += 1
         return datalist
 
@@ -273,7 +277,7 @@ class sndBuffer:
         try:
             if self.state == CwndState.SLOWSTART:
                 if self.lastByteAcked in self.messages:
-                    if self.messages[self.lastByteAcked].is_acked():
+                    if self.messages[self.lastByteAcked].is_acked() is True:
                         self.cwnd += 1
                         if self.cwnd == self.ssthresh:
                             self.state = CwndState.CONGAVOID
@@ -289,7 +293,7 @@ class sndBuffer:
                     last = self.lastByteSent - PACKET_SIZE
                 if self.messages[last].is_acked():
                     self.cwnd += 1
-                    self.lastByteAcked = last
+                    self.lastByteAcked = self.lastByteSent
         finally:
             self.lock.release()
 
@@ -327,7 +331,7 @@ class message:
         if self.timeoutCount == 20:
             logger.error('Too many timeout, dropping packet %d' % self.seqNum)
         if not self.acked:
-            if self.timeoutTime != 1:
+            if self.timeoutCount != 0:
                 logger.debug('Resending message with seqNum=%d' % self.seqNum)
             self.sendBuf.find_cong()
             self.send(destAddr)

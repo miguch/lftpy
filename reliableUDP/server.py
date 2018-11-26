@@ -19,6 +19,7 @@ class serverConn:
         self.sendWin = sndBuffer()
         self.canSend = True
         self.server = server
+        self.lock = threading.Lock()
         logger.debug('Create a server connection to %s' % str(addr))
 
     def consume_rcv_buffer(self):
@@ -48,7 +49,7 @@ class serverConn:
         if self.sendWin.get_cwnd() == 0:  #first file trunk
             self.sendWin.set_cwnd(1)
             self.sendWin.set_win(1)
-            self.sendWin.ssthresh = 8
+            self.sendWin.ssthresh = 10
             self.sendWin.state = CwndState.SLOWSTART
             self.check_cong_and_send()
         return True
@@ -57,6 +58,7 @@ class serverConn:
         datalist = self.sendWin.get_data()
         if not datalist:
             return
+        logger.debug("Sending %d packets" % len(datalist))
         for data in datalist:
             self.send_msg(data)
         if self.sendWin.adding is False:
@@ -124,10 +126,11 @@ class serverConn:
                     self.update_state(RecvStates.ESTABLISHED)
                 else:
                     if self.sendWin.state != CwndState.SHAKING:
-                        self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
+                        logger.debug('window size: %d' % self.sendWin.get_win())
                         if headerDict[Sec.recvWin] > 0:
                             if headerDict[Sec.ackNum] > 0:
                                 self.sendWin.ack(mess)
+                                self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
                                 self.check_cong_and_send()
                             else:
                                 self.check_cong_and_send()
@@ -173,26 +176,30 @@ class serverConn:
             self.app.remove_user((self.destIP, self.destPort))
 
     def send_msg(self, data):
-        headerDict = defaultHeaderDict.copy()
-        headerDict.update({
-            Sec.sPort: self.conn.port,
-            Sec.dPort: self.destPort,
-            Sec.seqNum: self.seqNum,
-            Sec.ackNum: self.clientSeq,
-            Sec.SYN: 0,
-            Sec.ACK: 0,
-            Sec.FIN: 0,
-            Sec.recvWin: self.recvWin.get_win()
-        })
-        headerData = dict_to_header(headerDict)
-        fill_checksum(headerData, data)
-        logger.debug("data message sent, seq: " + str(self.seqNum))
-        data_msg = message(headerData + data, self.conn, self.sendWin)
-        data_msg.send_with_timer(self.addr)
-        self.seqNum += len(data)
-        self.messages.add_msg(data_msg, self.seqNum)
-        if self.sendWin.state != CwndState.SHAKING:
-            self.sendWin.send(data_msg)
+        self.lock.acquire()
+        try:
+            headerDict = defaultHeaderDict.copy()
+            headerDict.update({
+                Sec.sPort: self.conn.port,
+                Sec.dPort: self.destPort,
+                Sec.seqNum: self.seqNum,
+                Sec.ackNum: self.clientSeq,
+                Sec.SYN: 0,
+                Sec.ACK: 0,
+                Sec.FIN: 0,
+                Sec.recvWin: self.recvWin.get_win()
+            })
+            headerData = dict_to_header(headerDict)
+            fill_checksum(headerData, data)
+            logger.debug("data message sent, seq: " + str(self.seqNum))
+            data_msg = message(headerData + data, self.conn, self.sendWin)
+            data_msg.send_with_timer(self.addr)
+            self.seqNum += len(data)
+            self.messages.add_msg(data_msg, self.seqNum)
+            if self.sendWin.state != CwndState.SHAKING:
+                self.sendWin.send(data_msg)
+        finally:
+            self.lock.release()
 
 
     # Send the ack message to client
