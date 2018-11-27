@@ -53,7 +53,7 @@ class rUDPClient:
         if self.sendWin.get_cwnd() == 0:  # first file trunk
             self.sendWin.set_cwnd(1)
             self.sendWin.set_win(1)
-            self.sendWin.ssthresh = 10
+            self.sendWin.ssthresh = 6
             self.sendWin.state = CwndState.SLOWSTART
             self.check_cong_and_send()
         return True
@@ -61,6 +61,8 @@ class rUDPClient:
     def check_cong_and_send(self):
         datalist = self.sendWin.get_data()
         if not datalist:
+            logger.debug('shit')
+            self.app.notify_next_move((self.destIP, self.destPort))
             return
         logger.debug("Sending %d packets" % len(datalist))
         for data in datalist:
@@ -274,11 +276,14 @@ class rUDPClient:
                         self.third_wavehand()
                     else:
                         if self.sendWin.state != CwndState.SHAKING:
-                            if headerDict[Sec.recvWin] > 0 and self.sendWin.messages[self.sendWin.lastByteAcked].seqNum == mess.seqNum:
+                            logger.debug('rcvWindow size: %d' % headerDict[Sec.recvWin])
+                            if headerDict[Sec.recvWin] > 0:
                                 if headerDict[Sec.ackNum] > 0:
-                                    self.sendWin.ack(mess)
+                                    flag = self.sendWin.ack(mess)
+                                    logger.debug(flag is not False)
                                     self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
-                                    self.check_cong_and_send()
+                                    if flag is not False:
+                                        self.check_cong_and_send()
                                 else:
                                     self.check_cong_and_send()
             else:

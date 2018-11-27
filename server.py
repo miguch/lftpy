@@ -56,24 +56,28 @@ class serverSession:
         return True
 
     def next(self):
-        if self.state == serverStates.DATA:
-            if len(self.waitingList) != 0:
-                while len(self.waitingList) != 0:
-                    if self.conn.append_snd_buffer(self.waitingList[0]):
-                        self.waitingList.pop(0)
-                    else:
-                        return
-            if self.action == operations.GET:
-                while True and not self.file.closed:
-                    data = self.file.read(5116)
-                    if len(data) == 0:
-                        self.send_data(b'DONE', True)
-                        self.file.close()
-                        break
-                    else:
-                        # Pause when we cannot add new data to send
-                        if not self.send_data(data, True):
+        self.lock.acquire()
+        try:
+            if self.state == serverStates.DATA:
+                if len(self.waitingList) != 0:
+                    while len(self.waitingList) != 0:
+                        if self.conn.append_snd_buffer(self.waitingList[0]):
+                            self.waitingList.pop(0)
+                        else:
+                            return
+                if self.action == operations.GET:
+                    while True and not self.file.closed:
+                        data = self.file.read(5116)
+                        if len(data) == 0:
+                            self.send_data(b'DONE', True)
+                            self.file.close()
                             break
+                        else:
+                            # Pause when we cannot add new data to send
+                            if not self.send_data(data, True):
+                                break
+        finally:
+            self.lock.release()
 
     def response_req(self):
         if self.action == operations.GET:

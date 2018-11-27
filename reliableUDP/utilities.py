@@ -145,7 +145,7 @@ def get_ack_num(header: bytearray):
 
 
 
-MAX_BUFFER_SIZE = 102400
+MAX_BUFFER_SIZE = 204800
 # Each data packet should be of size 1k
 PACKET_SIZE = 5120
 
@@ -244,6 +244,8 @@ class sndBuffer:
     def set_cwnd(self, cwnd):
         self.lock.acquire()
         try:
+            if cwnd > 30:
+                cwnd = 30
             self.cwnd = cwnd
         finally:
             self.lock.release()
@@ -251,8 +253,6 @@ class sndBuffer:
     def set_win(self, win):
         self.lock.acquire()
         try:
-            if win > 16:
-                win = 16
             self.win = win
         finally:
             self.lock.release()
@@ -260,7 +260,10 @@ class sndBuffer:
     def add(self, data: bytearray):
         self.lock.acquire()
         try:
+            logger.debug('adding')
             if self.length + PACKET_SIZE > MAX_BUFFER_SIZE:
+                logger.debug("%d %d %d %d %d" % (self.lastByteAcked // PACKET_SIZE, self.lastByteSent //PACKET_SIZE,
+        self.lastByteReady // PACKET_SIZE, self.length // PACKET_SIZE, self.win))
                 self.adding = False
                 return True
             self.buffer[self.lastByteReady:self.lastByteReady+PACKET_SIZE] = data
@@ -274,15 +277,17 @@ class sndBuffer:
     
     def ack(self, mess):
         self.lock.acquire()
+        logger.debug('%s' % str(self.state))
         try:
-            logger.debug('%d %d' % (self.messages[self.lastByteAcked].seqNum, mess.seqNum))
             if self.state == CwndState.SLOWSTART:
-                if self.lastByteAcked in self.messages:
+                if self.lastByteAcked in self.messages and self.messages[self.lastByteAcked].seqNum == mess.seqNum:
                     if self.messages[self.lastByteAcked].is_acked() is True:
                         self.cwnd += 1
                         if self.cwnd == self.ssthresh:
                             self.state = CwndState.CONGAVOID
                         self.lastByteAcked += PACKET_SIZE
+                else:
+                    return False
                 if self.lastByteAcked == MAX_BUFFER_SIZE:
                     self.lastByteAcked = 0
                 self.length -= PACKET_SIZE
@@ -292,9 +297,15 @@ class sndBuffer:
                     last = MAX_BUFFER_SIZE - PACKET_SIZE
                 else:
                     last = self.lastByteSent - PACKET_SIZE
-                if self.messages[last].is_acked():
+                if self.messages[last].is_acked() is True:
                     self.cwnd += 1
                     self.lastByteAcked = self.lastByteSent
+                    if self.lastByteReady >= self.lastByteAcked:
+                        self.length = self.lastByteReady - self.lastByteAcked
+                    else:
+                        self.length = MAX_BUFFER_SIZE + self.lastByteReady - self.lastByteAcked
+                else:
+                    return False
         finally:
             self.lock.release()
 
@@ -334,7 +345,7 @@ class message:
         if not self.acked:
             if self.timeoutCount != 0:
                 logger.debug('Resending message with seqNum=%d' % self.seqNum)
-            self.sendBuf.find_cong()
+                self.sendBuf.find_cong()
             self.send(destAddr)
             t = threading.Timer(self.timeoutTime, self.send_with_timer, args=[destAddr])
             self.timeoutCount += 1
