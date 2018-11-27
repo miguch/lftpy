@@ -17,7 +17,6 @@ class serverConn:
         self.messages = msgPool()
         self.recvWin = rcvBuffer()
         self.sendWin = sndBuffer()
-        self.canSend = True
         self.server = server
         self.seqLock = threading.Lock()
         self.ackLock = threading.Lock()
@@ -52,7 +51,7 @@ class serverConn:
             logger.debug('first file trunk')
             self.sendWin.set_cwnd(1)
             self.sendWin.set_win(1)
-            self.sendWin.ssthresh = 8
+            self.sendWin.ssthresh = 6
             self.sendWin.state = CwndState.SLOWSTART
             self.check_cong_and_send()
         return True

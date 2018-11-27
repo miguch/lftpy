@@ -145,7 +145,7 @@ def get_ack_num(header: bytearray):
 
 
 
-MAX_BUFFER_SIZE = 204800
+MAX_BUFFER_SIZE = 153600
 # Each data packet should be of size 1k
 PACKET_SIZE = 5120
 
@@ -214,15 +214,16 @@ class sndBuffer:
         self.lock = threading.Lock()
 
     def find_cong(self):
-        if self.state != CwndState.SHAKING:
+        if self.state != CwndState.SHAKING and self.state == CwndState.CONGAVOID:
             self.state = CwndState.SLOWSTART
             self.ssthresh = self.cwnd // 2
             self.cwnd = 1
 
+
     def get_data(self):
         datalist = []
         i = self.lastByteSent
-        if i == self.lastByteReady:
+        if self.length == 0:
             return []
         count = 0
         while count < self.win:
@@ -244,8 +245,6 @@ class sndBuffer:
     def set_cwnd(self, cwnd):
         self.lock.acquire()
         try:
-            if cwnd > 30:
-                cwnd = 30
             self.cwnd = cwnd
         finally:
             self.lock.release()
@@ -253,6 +252,8 @@ class sndBuffer:
     def set_win(self, win):
         self.lock.acquire()
         try:
+            if win > 10:
+                win = 10
             self.win = win
         finally:
             self.lock.release()
@@ -280,6 +281,7 @@ class sndBuffer:
         logger.debug('%s' % str(self.state))
         try:
             if self.state == CwndState.SLOWSTART:
+                logger.debug('%d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE)
                 if self.lastByteAcked in self.messages and self.messages[self.lastByteAcked].seqNum == mess.seqNum:
                     if self.messages[self.lastByteAcked].is_acked() is True:
                         self.cwnd += 1
@@ -293,6 +295,11 @@ class sndBuffer:
                 self.length -= PACKET_SIZE
             else:
                 last = 0
+                if self.messages[self.lastByteAcked].seqNum == mess.seqNum:
+                    self.lastByteAcked += PACKET_SIZE
+                    if self.lastByteAcked == MAX_BUFFER_SIZE:
+                        self.lastByteAcked = 0
+                logger.debug('%d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE)
                 if self.lastByteSent == 0:
                     last = MAX_BUFFER_SIZE - PACKET_SIZE
                 else:
