@@ -216,7 +216,7 @@ class sndBuffer:
         self.lock = threading.Lock()
 
     def find_cong(self):
-        #self.pausing = True
+        self.pausing = True
         if self.state != CwndState.SHAKING and self.state == CwndState.CONGAVOID:
             self.state = CwndState.SLOWSTART
             self.ssthresh = self.cwnd // 2
@@ -227,7 +227,7 @@ class sndBuffer:
         datalist = []
         i = self.lastByteSent
         #logger.debug("pausing: %d" % self.pausing)
-        if self.length == 0:
+        if self.length == 0 or self.pausing is True:
             return []
         count = 0
         while count < self.win:
@@ -297,6 +297,8 @@ class sndBuffer:
                 if self.lastByteAcked == MAX_BUFFER_SIZE:
                     self.lastByteAcked = 0
                 self.length -= PACKET_SIZE
+                if self.lastByteAcked == self.lastByteSent and self.pausing is True:
+                    self.pausing = False
             else:
                 last = 0
                 if self.messages[self.lastByteAcked].seqNum == mess.seqNum:
@@ -351,8 +353,9 @@ class message:
     def send_with_timer(self, destAddr):
         if self.timeoutCount == 3:
             logger.warning('Timeout %d exceeds 3 times' % self.seqNum)
-        if self.timeoutCount == 20:
+        if self.timeoutCount == 30:
             logger.error('Too many timeout, dropping packet %d' % self.seqNum)
+            return
         if not self.acked:
             if self.timeoutCount != 0:
                 logger.debug('Resending message with seqNum=%d' % self.seqNum)
