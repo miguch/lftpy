@@ -18,6 +18,7 @@ class rUDPClient:
         self.canSend = True
         self.messages = msgPool()
         self.recvWin = rcvBuffer()
+        self.recvEmpty = False
         self.sendWin = sndBuffer()
         self.app = app
         self.finished = False
@@ -27,7 +28,6 @@ class rUDPClient:
 
     def consume_rcv_buffer(self):
         if self.recvWin.get_win() == 0:
-            self.sendWin.set_win(1)
             headerDict = defaultHeaderDict.copy()
             headerDict.update({
                 Sec.sPort: self.port,
@@ -49,6 +49,9 @@ class rUDPClient:
     def append_snd_buffer(self, data: bytearray):
         full = self.sendWin.add(data)
         if full:
+            logger.debug('full')
+            if self.sendWin.lastByteSent == self.sendWin.lastByteReady:
+                self.check_cong_and_send()
             return False    # sending buffer cannot add for now
         if self.sendWin.get_cwnd() == 0:  # first file trunk
             self.sendWin.set_cwnd(1)
@@ -61,13 +64,13 @@ class rUDPClient:
     def check_cong_and_send(self):
         datalist = self.sendWin.get_data()
         if not datalist:
-            logger.debug('shit')
+            self.recvEmpty = True
             self.app.notify_next_move((self.destIP, self.destPort))
             return
         logger.debug("Sending %d packets" % len(datalist))
         for data in datalist:
             self.send_msg(data)
-        self.app.notify_next_move()
+        self.app.notify_next_move((self.destIP, self.destPort))
 
 
     def update_state(self, newState):
@@ -270,6 +273,7 @@ class rUDPClient:
                 if mess is not None:
                     self.messages.ack_to_num(headerDict[Sec.ackNum])
                     logger.debug('Received ack message with ackNum=%d' % headerDict[Sec.ackNum])
+                    logger.debug('%s' % self.sendWin.state)
                     if headerDict[Sec.ackNum] == self.seqNum and self.state == SendStates.FIN_WAIT_1:
                         self.second_wavehand()
                     elif self.state == SendStates.FIN_WAIT_2 and headerDict[Sec.FIN]:

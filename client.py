@@ -99,6 +99,7 @@ class client(app):
                         if self.file.tell() == self.fileSize:
                             print('\rFile upload completed', end='')
                         if len(data) == 0:
+                            logger.debug('complete')
                             break
                         else:
                             # Pause when we cannot add new data to send
@@ -109,6 +110,7 @@ class client(app):
 
 
     def process_data(self, user=None):
+        goNext = False
         try:
             self.lock.acquire()
             data = self.rudp.consume_rcv_buffer()
@@ -130,6 +132,7 @@ class client(app):
                         self.fileSize = self.file.tell()
                         self.file.seek(begin_pos, os.SEEK_SET)
                         self.send_data(b'SIZE ' + int.to_bytes(self.fileSize, byteorder='little', length=4), False)
+                        goNext = True
                 elif self.action == operations.LIST:
                     files = json.loads(content.decode())
                     for name in files:
@@ -158,6 +161,8 @@ class client(app):
                         print('\rFile download completed', end='')
         finally:
             self.lock.release()
+        if goNext:
+            self.next()
 
     def notify_close(self):
         self.close()

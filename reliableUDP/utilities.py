@@ -192,6 +192,7 @@ class rcvBuffer:
             if self.lastByteRead == MAX_BUFFER_SIZE:
                 self.lastByteRead = 0
             self.length -= PACKET_SIZE
+            logger.debug('%d %d', self.lastByteRcvd // PACKET_SIZE, self.lastByteRead // PACKET_SIZE)
             return result
         finally:
             self.lock.release()
@@ -208,12 +209,14 @@ class sndBuffer:
         self.win = 0
         self.cwnd = 0
         self.state = CwndState.SHAKING
+        self.pausing = False
         self.ssthresh = 0
         self.adding = True
         # Lock buffer when accessing
         self.lock = threading.Lock()
 
     def find_cong(self):
+        self.pausing = True
         if self.state != CwndState.SHAKING and self.state == CwndState.CONGAVOID:
             self.state = CwndState.SLOWSTART
             self.ssthresh = self.cwnd // 2
@@ -223,7 +226,8 @@ class sndBuffer:
     def get_data(self):
         datalist = []
         i = self.lastByteSent
-        if self.length == 0:
+        logger.debug("pausing: %d" % self.pausing)
+        if self.length == 0 or self.pausing is True:
             return []
         count = 0
         while count < self.win:
@@ -281,7 +285,7 @@ class sndBuffer:
         logger.debug('%s' % str(self.state))
         try:
             if self.state == CwndState.SLOWSTART:
-                logger.debug('%d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE)
+                logger.debug('%d %d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE, self.lastByteReady // PACKET_SIZE)
                 if self.lastByteAcked in self.messages and self.messages[self.lastByteAcked].seqNum == mess.seqNum:
                     if self.messages[self.lastByteAcked].is_acked() is True:
                         self.cwnd += 1
@@ -293,13 +297,16 @@ class sndBuffer:
                 if self.lastByteAcked == MAX_BUFFER_SIZE:
                     self.lastByteAcked = 0
                 self.length -= PACKET_SIZE
+                if self.lastByteAcked == self.lastByteSent and self.pausing is True:
+                    self.pausing = False
+
             else:
                 last = 0
                 if self.messages[self.lastByteAcked].seqNum == mess.seqNum:
                     self.lastByteAcked += PACKET_SIZE
                     if self.lastByteAcked == MAX_BUFFER_SIZE:
                         self.lastByteAcked = 0
-                logger.debug('%d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE)
+                logger.debug('%d %d %d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE, self.lastByteReady // PACKET_SIZE, self.length // PACKET_SIZE)
                 if self.lastByteSent == 0:
                     last = MAX_BUFFER_SIZE - PACKET_SIZE
                 else:

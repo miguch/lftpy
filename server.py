@@ -112,7 +112,10 @@ class serverSession:
     def process_data(self, data):
         if self.action == operations.SEND:
             if self.state == serverStates.WAIT_SIZE:
-                [cmd, arg] = data.split(b' ')
+                msg = data.split(b' ')
+                if len(msg) < 2:
+                    return
+                [cmd, arg] = msg
                 if cmd == b'SIZE':
                     self.fileSize = int.from_bytes(arg, byteorder='little')
                     self.update_state(serverStates.DATA)
