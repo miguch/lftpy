@@ -56,7 +56,7 @@ class rUDPClient:
         if self.sendWin.get_cwnd() == 0:  # first file trunk
             self.sendWin.set_cwnd(1)
             self.sendWin.set_win(1)
-            self.sendWin.ssthresh = 16
+            self.sendWin.ssthresh = 6
             self.sendWin.state = CwndState.SLOWSTART
             self.check_cong_and_send()
         return True
