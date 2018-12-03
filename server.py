@@ -122,6 +122,8 @@ class serverSession:
             elif self.state == serverStates.DATA:
                 try:
                     self.lock.acquire()
+                    if self.file.closed:
+                        return
                     if self.file.tell() == self.fileSize:
                         return
                     self.file.write(data)
@@ -148,7 +150,8 @@ class server(app):
             self.lock.release()
 
     def next(self, user):
-        self.sessions[user].next()
+        if user in self.sessions:
+            self.sessions[user].next()
 
     def process_data(self, user):
         try:

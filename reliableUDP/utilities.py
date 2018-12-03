@@ -216,7 +216,8 @@ class sndBuffer:
         self.lock = threading.Lock()
 
     def find_cong(self):
-        self.pausing = True
+        # TODO: Pausing feature
+        #self.pausing = True
         if self.state != CwndState.SHAKING and self.state == CwndState.CONGAVOID:
             self.state = CwndState.SLOWSTART
             self.ssthresh = self.cwnd // 2
@@ -227,7 +228,7 @@ class sndBuffer:
         datalist = []
         i = self.lastByteSent
         #logger.debug("pausing: %d" % self.pausing)
-        if self.length == 0 or self.pausing is True:
+        if self.length == 0:
             return []
         count = 0
         while count < self.win:
@@ -297,8 +298,8 @@ class sndBuffer:
                 if self.lastByteAcked == MAX_BUFFER_SIZE:
                     self.lastByteAcked = 0
                 self.length -= PACKET_SIZE
-                if self.lastByteAcked == self.lastByteSent and self.pausing is True:
-                    self.pausing = False
+                # if self.lastByteAcked == self.lastByteSent and self.pausing is True:
+                #     self.pausing = False
             else:
                 last = 0
                 if self.messages[self.lastByteAcked].seqNum == mess.seqNum:

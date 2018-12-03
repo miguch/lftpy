@@ -153,6 +153,8 @@ class client(app):
                 if (self.file is None or self.file.closed or self.file.tell() == self.fileSize) and content.decode() == 'DONE':
                     self.rudp.finish_conn()
                 elif self.action == operations.GET:
+                    if self.file.closed:
+                        return
                     if self.file.tell() == self.fileSize:
                         return
                     self.file.write(content)
