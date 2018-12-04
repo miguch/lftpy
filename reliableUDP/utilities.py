@@ -145,7 +145,7 @@ def get_ack_num(header: bytearray):
 
 
 
-MAX_BUFFER_SIZE = 153600
+MAX_BUFFER_SIZE = 256000
 # Each data packet should be of size 1k
 PACKET_SIZE = 5120
 
@@ -217,7 +217,7 @@ class sndBuffer:
 
     def find_cong(self):
         # TODO: Pausing feature
-        #self.pausing = True
+        self.pausing = True
         if self.state != CwndState.SHAKING and self.state == CwndState.CONGAVOID:
             self.state = CwndState.SLOWSTART
             self.ssthresh = self.cwnd // 2
@@ -230,6 +230,8 @@ class sndBuffer:
         #logger.debug("pausing: %d" % self.pausing)
         if self.length == 0:
             return []
+        if self.pausing is True:
+            return [1]
         count = 0
         while count < self.win:
             datalist.append(self.buffer[i:i+PACKET_SIZE])
@@ -257,8 +259,8 @@ class sndBuffer:
     def set_win(self, win):
         self.lock.acquire()
         try:
-            if win > 10:
-                win = 10
+            if win > 20:
+                win = 20
             self.win = win
         finally:
             self.lock.release()
@@ -298,8 +300,8 @@ class sndBuffer:
                 if self.lastByteAcked == MAX_BUFFER_SIZE:
                     self.lastByteAcked = 0
                 self.length -= PACKET_SIZE
-                # if self.lastByteAcked == self.lastByteSent and self.pausing is True:
-                #     self.pausing = False
+                if self.lastByteAcked == self.lastByteSent and self.pausing is True:
+                    self.pausing = False
             else:
                 last = 0
                 if self.messages[self.lastByteAcked].seqNum == mess.seqNum:

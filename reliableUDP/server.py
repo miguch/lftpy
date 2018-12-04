@@ -46,12 +46,14 @@ class serverConn:
         full = self.sendWin.add(data)
         if full:
             logger.debug('full')
+            if self.sendWin.lastByteAcked == self.sendWin.lastByteSent:
+                self.check_cong_and_send()
             return False
         if self.sendWin.get_cwnd() == 0:  #first file trunk
             logger.debug('first file trunk')
             self.sendWin.set_cwnd(1)
             self.sendWin.set_win(1)
-            self.sendWin.ssthresh = 6
+            self.sendWin.ssthresh = 10
             self.sendWin.state = CwndState.SLOWSTART
             self.check_cong_and_send()
         return True
@@ -62,6 +64,8 @@ class serverConn:
             logger.debug('shit')
             self.app.notify_next_move((self.destIP, self.destPort))
             return
+        if datalist[0] == 1:
+             return
         logger.debug('%s' % str(self.sendWin.state))
         logger.debug("%d %d %d %d %d Sending %d packets" % (self.sendWin.lastByteAcked // PACKET_SIZE, self.sendWin.lastByteSent //PACKET_SIZE,
         self.sendWin.lastByteReady // PACKET_SIZE, self.sendWin.length // PACKET_SIZE, self.sendWin.win, len(datalist)))
@@ -141,6 +145,8 @@ class serverConn:
                                     self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
                                     if flag is not False:
                                         self.check_cong_and_send()
+                                    # if pausing is True:
+                                    #     self.app.notify_next_move((self.destIP, self.destPort))
                                 else:
                                     self.check_cong_and_send()
             else:
