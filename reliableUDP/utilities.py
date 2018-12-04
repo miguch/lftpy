@@ -296,7 +296,6 @@ class sndBuffer:
                         self.cwnd += 1
                         if self.cwnd > 20:
                             self.cwnd = 20
-                        self.set_cwnd(self.cwnd + 1)
                         if self.cwnd == self.ssthresh:
                             self.state = CwndState.CONGAVOID
                         self.lastByteAcked += PACKET_SIZE
