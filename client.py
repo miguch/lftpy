@@ -145,7 +145,6 @@ class client(app):
                     cmdIndex = content.index(b' ')
                     cmd = content[:cmdIndex]
                     arg = content[cmdIndex+1:]
-                    print(arg)
                     if cmd.decode() == 'NOTEXIST' and content[len(cmd)+1:].decode() == self.filename:
                         print('Requested file does not exist on the server!')
                         self.rudp.finish_conn()
