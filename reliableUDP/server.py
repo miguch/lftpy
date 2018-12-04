@@ -65,7 +65,8 @@ class serverConn:
             self.app.notify_next_move((self.destIP, self.destPort))
             return
         if datalist[0] == 1:
-             return
+            logger.debug('%d %d still pausing' % (self.sendWin.lastByteAcked, self.sendWin.lastByteSent))
+            return
         logger.debug('%s' % str(self.sendWin.state))
         logger.debug("%d %d %d %d %d Sending %d packets" % (self.sendWin.lastByteAcked // PACKET_SIZE, self.sendWin.lastByteSent //PACKET_SIZE,
         self.sendWin.lastByteReady // PACKET_SIZE, self.sendWin.length // PACKET_SIZE, self.sendWin.win, len(datalist)))
