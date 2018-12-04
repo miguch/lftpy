@@ -293,6 +293,9 @@ class sndBuffer:
                 logger.debug('%d %d %d %d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE, self.lastByteReady // PACKET_SIZE, self.ssthresh, self.cwnd)
                 if self.lastByteAcked in self.messages and self.messages[self.lastByteAcked].seqNum == mess.seqNum:
                     if self.messages[self.lastByteAcked].is_acked() is True:
+                        self.cwnd += 1
+                        if self.cwnd > 20:
+                            self.cwnd = 20
                         self.set_cwnd(self.cwnd + 1)
                         if self.cwnd == self.ssthresh:
                             self.state = CwndState.CONGAVOID
@@ -316,7 +319,9 @@ class sndBuffer:
                 else:
                     last = self.lastByteSent - PACKET_SIZE
                 if self.messages[last].is_acked() is True:
-                    self.set_cwnd(self.cwnd + 1)
+                    self.cwnd += 1
+                        if self.cwnd > 20:
+                            self.cwnd = 20
                     self.lastByteAcked = self.lastByteSent
                     if self.lastByteReady >= self.lastByteAcked:
                         self.length = self.lastByteReady - self.lastByteAcked
