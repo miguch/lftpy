@@ -219,6 +219,10 @@ class sndBuffer:
         # TODO: Pausing feature
         self.pausing = True
         if self.state != CwndState.SHAKING and self.state == CwndState.CONGAVOID:
+            if self.lastByteReady >= self.lastByteAcked:
+                self.length = self.lastByteReady - self.lastByteAcked
+            else:
+                self.length = MAX_BUFFER_SIZE + self.lastByteReady - self.lastByteAcked
             self.state = CwndState.SLOWSTART
             self.ssthresh = self.cwnd // 2
             self.cwnd = 1
@@ -300,6 +304,20 @@ class sndBuffer:
                         if self.cwnd == self.ssthresh:
                             self.state = CwndState.CONGAVOID
                         self.lastByteAcked += PACKET_SIZE
+                elif self.lastByteAcked in self.messages:
+                    temp = self.lastByteAcked - PACKET_SIZE
+                    for key, value in self.messages.items():
+                        if value.seqNum == mess.seqNum:
+                            temp = key
+                            break
+                    self.lastByteAcked = temp + PACKET_SIZE
+                    if self.lastByteAcked != temp + PACKET_SIZE:
+                        if self.pausing is not True:
+                            self.cwnd += 1
+                        if self.cwnd > 20:
+                            self.cwnd = 20
+                        if self.cwnd == self.ssthresh:
+                            self.state = CwndState.CONGAVOID
                 else:
                     return False
                 if self.lastByteAcked == MAX_BUFFER_SIZE:
