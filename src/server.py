@@ -129,7 +129,6 @@ class serverSession:
                     if self.file.tell() == self.fileSize:
                         return
                     self.file.write(data)
-                    print(self.file.tell() / self.fileSize)
                     if self.file.tell() == self.fileSize:
                         self.send_data(b'DONE', False)
                         self.file.close()
