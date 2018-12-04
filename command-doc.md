@@ -1,6 +1,6 @@
 # LFTP application Commands
 
-Every Packet sent should have 1024 bytes data parts, the first 4 bytes in the data
+Every Packet sent should have 5120 bytes data parts, the first 4 bytes in the data
 should indicate the actual length of the packet, the rest of the packet should be padded with \0.
 
 1. client->server: `lLIST`
