@@ -320,8 +320,8 @@ class sndBuffer:
                     last = self.lastByteSent - PACKET_SIZE
                 if self.messages[last].is_acked() is True:
                     self.cwnd += 1
-                        if self.cwnd > 20:
-                            self.cwnd = 20
+                    if self.cwnd > 20:
+                        self.cwnd = 20
                     self.lastByteAcked = self.lastByteSent
                     if self.lastByteReady >= self.lastByteAcked:
                         self.length = self.lastByteReady - self.lastByteAcked
