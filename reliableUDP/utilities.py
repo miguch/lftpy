@@ -288,7 +288,7 @@ class sndBuffer:
         logger.debug('%s' % str(self.state))
         try:
             if self.state == CwndState.SLOWSTART:
-                logger.debug('%d %d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE, self.lastByteReady // PACKET_SIZE)
+                logger.debug('%d %d %d %d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE, self.lastByteReady // PACKET_SIZE, self.ssthresh, self.cwnd)
                 if self.lastByteAcked in self.messages and self.messages[self.lastByteAcked].seqNum == mess.seqNum:
                     if self.messages[self.lastByteAcked].is_acked() is True:
                         self.cwnd += 1
@@ -308,7 +308,7 @@ class sndBuffer:
                     self.lastByteAcked += PACKET_SIZE
                     if self.lastByteAcked == MAX_BUFFER_SIZE:
                         self.lastByteAcked = 0
-                logger.debug('%d %d %d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE, self.lastByteReady // PACKET_SIZE, self.length // PACKET_SIZE)
+                logger.debug('%d %d %d %d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE, self.lastByteReady // PACKET_SIZE, self.ssthresh, self.cwnd)
                 if self.lastByteSent == 0:
                     last = MAX_BUFFER_SIZE - PACKET_SIZE
                 else:
