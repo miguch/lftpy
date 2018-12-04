@@ -45,12 +45,10 @@ class serverConn:
     def append_snd_buffer(self, data: bytearray):
         full = self.sendWin.add(data)
         if full:
-            logger.debug('full')
             if self.sendWin.lastByteAcked == self.sendWin.lastByteSent:
                 self.check_cong_and_send()
             return False
         if self.sendWin.get_cwnd() == 0:  #first file trunk
-            logger.debug('first file trunk')
             self.sendWin.set_cwnd(1)
             self.sendWin.set_win(1)
             self.sendWin.ssthresh = 10
@@ -61,15 +59,10 @@ class serverConn:
     def check_cong_and_send(self):
         datalist = self.sendWin.get_data()
         if not datalist:
-            logger.debug('shit')
             self.app.notify_next_move((self.destIP, self.destPort))
             return
         if datalist[0] == 1:
-            logger.debug('%d %d still pausing' % (self.sendWin.lastByteAcked, self.sendWin.lastByteSent))
             return
-        logger.debug('%s' % str(self.sendWin.state))
-        logger.debug("%d %d %d %d %d Sending %d packets" % (self.sendWin.lastByteAcked // PACKET_SIZE, self.sendWin.lastByteSent //PACKET_SIZE,
-        self.sendWin.lastByteReady // PACKET_SIZE, self.sendWin.length // PACKET_SIZE, self.sendWin.win, len(datalist)))
         for data in datalist:
             self.send_msg(data)
         self.app.notify_next_move((self.destIP, self.destPort))
@@ -138,11 +131,9 @@ class serverConn:
                         self.update_state(RecvStates.ESTABLISHED)
                     else:
                         if self.sendWin.state != CwndState.SHAKING:
-                            logger.debug('rcvWindow size: %d' % headerDict[Sec.recvWin])
                             if headerDict[Sec.recvWin] > 0:
                                 if headerDict[Sec.ackNum] > 0:
                                     flag = self.sendWin.ack(mess)
-                                    logger.debug(flag is not False)
                                     self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
                                     if flag is not False:
                                         self.check_cong_and_send()

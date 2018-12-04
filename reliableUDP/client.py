@@ -49,7 +49,6 @@ class rUDPClient:
     def append_snd_buffer(self, data: bytearray):
         full = self.sendWin.add(data)
         if full:
-            logger.debug('full')
             if self.sendWin.lastByteSent == self.sendWin.lastByteReady:
                 self.check_cong_and_send()
             return False    # sending buffer cannot add for now
@@ -64,10 +63,10 @@ class rUDPClient:
     def check_cong_and_send(self):
         datalist = self.sendWin.get_data()
         if not datalist:
-            self.recvEmpty = True
             self.app.notify_next_move((self.destIP, self.destPort))
             return
-        logger.debug("Sending %d packets" % len(datalist))
+        if datalist[0] == 1:
+            return
         for data in datalist:
             self.send_msg(data)
         self.app.notify_next_move((self.destIP, self.destPort))
@@ -273,18 +272,15 @@ class rUDPClient:
                 if mess is not None:
                     self.messages.ack_to_num(headerDict[Sec.ackNum])
                     logger.debug('Received ack message with ackNum=%d' % headerDict[Sec.ackNum])
-                    logger.debug('%s' % self.sendWin.state)
                     if headerDict[Sec.ackNum] == self.seqNum and self.state == SendStates.FIN_WAIT_1:
                         self.second_wavehand()
                     elif self.state == SendStates.FIN_WAIT_2 and headerDict[Sec.FIN]:
                         self.third_wavehand()
                     else:
                         if self.sendWin.state != CwndState.SHAKING:
-                            logger.debug('rcvWindow size: %d' % headerDict[Sec.recvWin])
                             if headerDict[Sec.recvWin] > 0:
                                 if headerDict[Sec.ackNum] > 0:
                                     flag = self.sendWin.ack(mess)
-                                    logger.debug(flag is not False)
                                     self.sendWin.set_win(min(headerDict[Sec.recvWin], self.sendWin.get_cwnd()))
                                     if flag is not False:
                                         self.check_cong_and_send()

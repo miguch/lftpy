@@ -211,7 +211,6 @@ class sndBuffer:
         self.state = CwndState.SHAKING
         self.pausing = False
         self.ssthresh = 0
-        self.adding = True
         # Lock buffer when accessing
         self.lock = threading.Lock()
 
@@ -274,11 +273,7 @@ class sndBuffer:
     def add(self, data: bytearray):
         self.lock.acquire()
         try:
-            logger.debug('adding')
             if self.length + PACKET_SIZE > MAX_BUFFER_SIZE:
-                logger.debug("%d %d %d %d %d" % (self.lastByteAcked // PACKET_SIZE, self.lastByteSent //PACKET_SIZE,
-        self.lastByteReady // PACKET_SIZE, self.length // PACKET_SIZE, self.win))
-                self.adding = False
                 return True
             self.buffer[self.lastByteReady:self.lastByteReady+PACKET_SIZE] = data
             self.lastByteReady += PACKET_SIZE
@@ -291,10 +286,8 @@ class sndBuffer:
     
     def ack(self, mess):
         self.lock.acquire()
-        logger.debug('%s' % str(self.state))
         try:
             if self.state == CwndState.SLOWSTART:
-                logger.debug('%d %d %d %d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE, self.lastByteReady // PACKET_SIZE, self.ssthresh, self.cwnd)
                 if self.lastByteAcked in self.messages and self.messages[self.lastByteAcked].seqNum == mess.seqNum:
                     if self.messages[self.lastByteAcked].is_acked() is True:
                         if self.pausing is not True:
@@ -331,7 +324,6 @@ class sndBuffer:
                     self.lastByteAcked += PACKET_SIZE
                     if self.lastByteAcked == MAX_BUFFER_SIZE:
                         self.lastByteAcked = 0
-                logger.debug('%d %d %d %d %d', self.lastByteAcked // PACKET_SIZE, self.lastByteSent // PACKET_SIZE, self.lastByteReady // PACKET_SIZE, self.ssthresh, self.cwnd)
                 if self.lastByteSent == 0:
                     last = MAX_BUFFER_SIZE - PACKET_SIZE
                 else:
