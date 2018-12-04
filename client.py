@@ -118,7 +118,9 @@ class client(app):
             content = data[4:4+length]
             if self.state == clientStates.SENDREQUEST:
                 if self.action == operations.SEND:
-                    [cmd, arg] = content.split(b' ')
+                    cmdIndex = content.index(b' ')
+                    cmd = content[:cmdIndex]
+                    arg = content[cmdIndex+1:]
                     if cmd == b'EXISTED' and content[len(cmd)+1:].decode() == self.filename:
                         print('File already existed on the server!')
                         self.rudp.finish_conn()
@@ -140,7 +142,10 @@ class client(app):
                     print()
                     self.update_state(clientStates.DATA)
                 elif self.action == operations.GET:
-                    [cmd, arg] = content.split(b' ')
+                    cmdIndex = content.index(b' ')
+                    cmd = content[:cmdIndex]
+                    arg = content[cmdIndex+1:]
+                    print(arg)
                     if cmd.decode() == 'NOTEXIST' and content[len(cmd)+1:].decode() == self.filename:
                         print('Requested file does not exist on the server!')
                         self.rudp.finish_conn()

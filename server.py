@@ -115,7 +115,9 @@ class serverSession:
                 msg = data.split(b' ')
                 if len(msg) < 2:
                     return
-                [cmd, arg] = msg
+                cmdIndex = data.index(b' ')
+                cmd = data[:cmdIndex]
+                arg = data[cmdIndex+1:]
                 if cmd == b'SIZE':
                     self.fileSize = int.from_bytes(arg, byteorder='little')
                     self.update_state(serverStates.DATA)
