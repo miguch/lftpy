@@ -1,6 +1,6 @@
 # LFTP
 
-LFTP is a UDP based application that provides the functionality of send file with reliable data transfer. 
+LFTP is a UDP based application that provides the functionality of sending file with reliable data transfer. 
 
 ## Usage
 
